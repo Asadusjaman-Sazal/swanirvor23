@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+    <!-- Main backdrop badge shape -->
+    <path
+        android:fillColor="#0D9488"
+        android:pathData="M64,8C33.1,8 8,33.1 8,64C8,94.9 33.1,120 64,120C94.9,120 120,94.9 120,64C120,33.1 94.9,8 64,8Z" />
+    <!-- Secondary inner ring design -->
+    <path
+        android:strokeColor="#14B8A6"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M64,16C37.5,16 16,37.5 16,64C16,90.5 37.5,112 64,112C90.5,112 112,90.5 112,64C112,37.5 90.5,16 64,16Z" />
+    <!-- Glowing Accent Star -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M64,26L67.5,35L77,35L69.5,41L72.5,50L64,44L55.5,50L58.5,41L51,35L60.5,35Z" />
+    <!-- Growth leaf hands/stems holding secure vault motif -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,44C52,44 44,52 44,64C44,74 50,82 58,84L58,94L70,94L70,84C78,82 84,74 84,64C84,52 76,44 64,44ZM64,78C56.3,78 50,71.7 50,64C50,56.3 56.3,50 64,50C71.7,50 78,56.3 78,64C78,71.7 71.7,78 64,78Z" />
+    <!-- Secure key/center vault lock bars -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M60,60L68,60L68,68L60,68Z" />
+</vector>

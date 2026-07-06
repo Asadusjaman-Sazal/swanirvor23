@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Swanirvor-23_Supabase",
+  "description": "Weekly savings tracker for legal professionals to manage personal and collective contributions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
