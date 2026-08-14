@@ -8,6 +8,7 @@ import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
+import com.example.util.Constants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.Dispatchers
@@ -172,7 +173,7 @@ class SavingsRepository(
         // Comment: Proactively clean up any preseeded/mock members and savings from local database to only keep manual accounts
         try {
             val allLocalMembers = memberDao.getAllMembersDirect()
-            val preseededMembers = allLocalMembers.filter { it.email.trim().lowercase() in seedEmails }
+            val preseededMembers = allLocalMembers.filter { it.email.trim().lowercase() in Constants.SEED_EMAILS }
             for (m in preseededMembers) {
                 val memberSavings = savingsDao.getSavingsForMemberDirect(m.id)
                 for (s in memberSavings) {
@@ -353,8 +354,8 @@ class SavingsRepository(
             val localMembers = memberDao.getAllMembersDirect()
 
             // Filter out seed members
-            val filteredRemoteMembers = remoteMembers.filter { it.email.trim().lowercase() !in seedEmails }
-            val filteredLocalMembers = localMembers.filter { it.email.trim().lowercase() !in seedEmails }
+            val filteredRemoteMembers = remoteMembers.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
+            val filteredLocalMembers = localMembers.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
 
             // Create remote mapping by email
             val remoteByEmail = filteredRemoteMembers.associateBy { it.email.trim().lowercase() }
@@ -411,7 +412,7 @@ class SavingsRepository(
             // Clean up any stale manual members locally that are not in the active de-duplicated list
             val allLocalAfterSync = memberDao.getAllMembersDirect()
             for (m in allLocalAfterSync) {
-                if (m.id !in deDuplicatedIds && m.email.trim().lowercase() !in seedEmails) {
+                if (m.id !in deDuplicatedIds && m.email.trim().lowercase() !in Constants.SEED_EMAILS) {
                     memberDao.deleteMember(m)
                 }
             }
@@ -665,18 +666,5 @@ class SavingsRepository(
         return Pair(updatedRemote, updatedLocal)
     }
 
-    companion object {
-        val seedEmails = setOf(
-            "sarah.j@example.com",
-            "m.reyes@example.com",
-            "elena.r@example.com",
-            "d.chen@example.com",
-            "amanda@example.com",
-            "jane.d@example.com",
-            "r.smith@example.com",
-            "ev.lin@example.com",
-            "john.doe@example.com",
-            "test@email.com"
-        )
-    }
+
 }

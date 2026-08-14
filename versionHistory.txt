@@ -1,4 +1,4 @@
-Current Version: 0.0.57
+Current Version: 0.0.58
 -----------------------
 
 Version History:
@@ -60,4 +60,5 @@ Version: 0.0.54 - Replaced the Settings > Automated Notification > Notification 
 Version: 0.0.55 - Widened the Settings > Automated Notification > Notification Day field and narrowed the Notification Time field so weekday names display on a single line.
 Version: 0.0.56 - Made the Admin Panel and Settings accordion buttons mutually exclusive (only one section open at a time, and all sections close when leaving the page) and highlighted the Admin Panel > Change Requests button and section outline with a red accent whenever any change request exists.
 Version: 0.0.57 - Fixed admin change/delete request notification clicks restarting the app instead of opening Admin Panel > Change Requests; the notification now resumes the existing task and only clears the pending route after the admin role is loaded and navigation succeeds.
+Version: 0.0.58 - Implemented Phase 7 code quality: extracted shared constants and password validator, split the monolithic MainScreen.kt into per-screen files plus date/CSV helpers, removed unused Retrofit/Moshi/logging/Firebase dependencies, derived versionCode from version history, added release signing fallbacks and curl --fail, added unit tests, and fixed strict date parsing so ISO dates no longer misparse.
 

@@ -10,6 +10,8 @@ import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
 import com.example.data.repository.SavingsRepository
 import com.example.ui.notification.AdminNotificationHelper
+import com.example.util.Constants
+import com.example.util.PasswordValidator
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -128,7 +130,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         // Comment: Combine allMembers and allSavings to dynamically calculate the up-to-date totalSavings for each member from savings history
         // Includes full de-duplication of duplicate email accounts (such as Asad.msnd) to present a single merged account in UI.
         allMembers = combine(repository.allMembers, repository.allSavings) { members, savingsList ->
-            val filtered = members.filter { it.email.trim().lowercase() !in seedEmails }
+            val filtered = members.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
             val groupedByEmail = filtered.groupBy { it.email.trim().lowercase() }
 
             groupedByEmail.map { (email, memberList) ->
@@ -142,12 +144,12 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         // Comment: Map and filter savings records, routing any savings assigned to duplicate account IDs to the primary representative ID
         allSavings = combine(repository.allSavings, repository.allMembers) { savingsList, members ->
             val seedMemberIds = members
-                .filter { it.email.trim().lowercase() in seedEmails }
+                .filter { it.email.trim().lowercase() in Constants.SEED_EMAILS }
                 .map { it.id }
                 .toSet()
             val filteredSavings = savingsList.filter { it.memberId !in seedMemberIds }
 
-            val remainingMembers = members.filter { it.email.trim().lowercase() !in seedEmails }
+            val remainingMembers = members.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
             val groupedByEmail = remainingMembers.groupBy { it.email.trim().lowercase() }
             val duplicateIdMap = mutableMapOf<Int, Int>()
             for ((email, membersWithEmail) in groupedByEmail) {
@@ -171,7 +173,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val loggedIn = membersList.find { it.id == userId }
                 if (loggedIn != null) {
                     val representative = membersList
-                        .filter { it.email.trim().lowercase() !in seedEmails }
+                        .filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
                         .find { it.email.trim().equals(loggedIn.email.trim(), ignoreCase = true) }
                     representative?.id ?: userId
                 } else {
@@ -641,7 +643,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         return try {
             val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
             val manualMembers = remoteMembers.filter { member ->
-                member.email.trim().lowercase() !in seedEmails
+                member.email.trim().lowercase() !in Constants.SEED_EMAILS
             }
             if (manualMembers.isEmpty()) "Admin" else "Member"
         } catch (e: Exception) {
@@ -660,13 +662,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     // Comment: Update the password for the currently logged-in user session in Supabase Auth (never stored locally)
     fun updatePassword(newPassword: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            // Comment: Enforce the minimum password policy (8+ characters with at least one letter and one number)
-            if (newPassword.length < 8) {
-                onResult(false, "Password must be at least 8 characters long.")
-                return@launch
-            }
-            if (!newPassword.any { it.isDigit() } || !newPassword.any { it.isLetter() }) {
-                onResult(false, "Password must contain at least one letter and one number.")
+            // Comment: Enforce the minimum password policy through the shared validator (8+ characters with at least one letter and one number)
+            PasswordValidator.validate(newPassword)?.let { error ->
+                onResult(false, error)
                 return@launch
             }
 
@@ -906,13 +904,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            // Comment: Enforce the minimum password policy (8+ characters with at least one letter and one number)
-            if (password.length < 8) {
-                onResult(false, "Password must be at least 8 characters long.")
-                return@launch
-            }
-            if (!password.any { it.isDigit() } || !password.any { it.isLetter() }) {
-                onResult(false, "Password must contain at least one letter and one number.")
+            // Comment: Enforce the minimum password policy through the shared validator (8+ characters with at least one letter and one number)
+            PasswordValidator.validate(password)?.let { error ->
+                onResult(false, error)
                 return@launch
             }
 
@@ -1080,17 +1074,5 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         const val SECTION_MEMBERS = "members"
         const val SECTION_REPORTS = "reports"
 
-        val seedEmails = setOf(
-            "sarah.j@example.com",
-            "m.reyes@example.com",
-            "elena.r@example.com",
-            "d.chen@example.com",
-            "amanda@example.com",
-            "jane.d@example.com",
-            "r.smith@example.com",
-            "ev.lin@example.com",
-            "john.doe@example.com",
-            "test@email.com"
-        )
     }
 }

@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.view.MainScreen
+import com.example.util.Constants
 import com.example.ui.viewmodel.SavingsViewModel
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -110,7 +111,7 @@ class MainActivity : ComponentActivity() {
             val host = uri.host
             // Redact the URI: it carries the access, provider, and refresh tokens.
             android.util.Log.i("MainActivity", "Deep Link received! Scheme: $scheme, Host: $host")
-            if (scheme == "swanirvor23" || scheme == "com.legumsoft.swanirvor23") {
+            if (scheme == Constants.DEEP_LINK_SCHEME || scheme == "com.legumsoft.swanirvor23") {
                 // Access fragment or query
                 val fragment = uri.fragment
                 val query = uri.query

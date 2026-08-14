@@ -22,6 +22,25 @@ fun getParsedVersionName(): String {
     return "1.0.0"
 }
 
+// Comment: Derive a monotonic versionCode from the same "Current Version" line so version bumps
+// in versionHistory.txt never require a separate manual versionCode edit.
+fun getParsedVersionCode(): Int {
+    val versionFile = rootProject.file("versionHistory.txt")
+    if (versionFile.exists()) {
+        var version = "1.0.0"
+        versionFile.forEachLine { line ->
+            if (line.trim().startsWith("Current Version:")) {
+                version = line.substringAfter("Current Version:").trim()
+            }
+        }
+        val parts = version.split(".").mapNotNull { it.toIntOrNull() }
+        if (parts.size >= 3) {
+            return parts[0] * 10000 + parts[1] * 100 + parts[2]
+        }
+    }
+    return 1
+}
+
 android {
     namespace = "com.example"
     compileSdk = 35
@@ -30,7 +49,7 @@ android {
         applicationId = "com.legumsoft.swanirvor23"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
+        versionCode = getParsedVersionCode()
         versionName = getParsedVersionName()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,9 +59,10 @@ android {
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
             storeFile = file(keystorePath)
-            storePassword = System.getenv("STORE_PASSWORD")
+            // Comment: Fall back to empty strings so a missing CI secret fails the signing step cleanly instead of producing a null store password.
+            storePassword = System.getenv("STORE_PASSWORD") ?: ""
             keyAlias = "upload"
-            keyPassword = System.getenv("KEY_PASSWORD")
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
         create("debugConfig") {
             storeFile = file("${rootDir}/debug.keystore")
@@ -85,7 +105,6 @@ secrets {
 // This makes it easy to add them back in the future if needed.
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
-    implementation(platform(libs.firebase.bom))
     // implementation(libs.accompanist.permissions)
     implementation(libs.androidx.activity.compose)
     // implementation(libs.androidx.camera.camera2)
@@ -108,15 +127,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.coil.compose)
-    implementation(libs.converter.moshi)
-    implementation(libs.firebase.ai)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.logging.interceptor)
-    implementation(libs.moshi.kotlin)
     implementation(libs.okhttp)
-    // implementation(libs.play.services.location)
-    implementation(libs.retrofit)
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)
@@ -134,7 +147,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
     "ksp"(libs.androidx.room.compiler)
-    "ksp"(libs.moshi.kotlin.codegen)
 }
 
 // Comment: Configure the Kotlin compiler options dynamically for all compilation tasks
