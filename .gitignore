@@ -33,3 +33,7 @@ supabaseSql.txt
 +++ .gitignore (修改后)
 ```
 ongoing_fixes.txt
+
+#Freebuff files
+.freebuff/
+/.freebuff
