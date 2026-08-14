@@ -1,5 +1,8 @@
-Current Version: 0.0.49
+Current Version: 0.0.56
+-----------------------
 
+Version History:
+----------------
 Version: 0.0.1 - Added Sign in/Signup page.
 Version: 0.0.2 - Added Sign in with Google button.
 Version: 0.0.3 - Fixed Supabase authentication flow, prevented auto-redirect when signup has no session, and restricted private screens using getSession().
@@ -49,3 +52,11 @@ Version: 0.0.46 - Added explicit exclude-all rules to backup_rules.xml and data_
 Version: 0.0.47 - Implemented Phase 3 token management: added isSessionExpiringSoon()/getRefreshToken()/refreshAccessToken() to SupabaseClient, persisted expires_at in the Google OAuth session, and made syncWithSupabase refresh an expiring access token before syncing (aborting when refresh fails).
 Version: 0.0.48 - Implemented Phase 4 data integrity: serialized syncWithSupabase with a mutex, made local-to-remote ID swaps atomic via @Transaction DAO methods, added soft deletes to savings (PATCH deleted=true, fetch filtering, and a sync guard against resurrection), and added an admin DELETE RLS policy for members.
 Version: 0.0.49 - Implemented Phase 4.4 data integrity: added a stable client-generated UUID sync_key to savings, upserted remote rows on that key instead of matching numeric IDs, targeted remote updates/soft-deletes by sync_key with a legacy id fallback, and added a one-time idempotent backfill that assigns shared keys to pre-existing local and remote rows.
+Version: 0.0.50 - Implemented Phase 5 performance optimizations: added 30-second OkHttp connect/read/write timeouts with retry-on-connection-failure, and reduced redundant DAO reads in sync by point-querying savings by ID for approved change requests and reusing the member ID set built during the members sync.
+Version: 0.0.51 - Implemented Phase 6 notifications and session lifecycle: switched the weekly reminder to a deliberate inexact AlarmManager.set() (no SCHEDULE_EXACT_ALARM needed on Android 12+), moved alarm scheduling to a single source of truth (app startup, notification-settings changes, and boot) instead of every settings write, and completed logout cleanup by resetting the Google login and reset-password dialog state.
+Version: 0.0.52 - Fixed weekly reminders not firing after a device reboot: the boot receiver was declared exported=false, which on Android 12+ prevents the system from delivering the BOOT_COMPLETED broadcast, so the alarm was never rescheduled. Set the receiver to exported=true so the reminder is rescheduled on boot.
+Version: 0.0.53 - Made the weekly contribution reminder self-rescheduling: after the alarm fires and posts the notification, the next week's occurrence is scheduled automatically from the persisted settings, so the reminder recurs every week without requiring the app to be reopened.
+Version: 0.0.54 - Replaced the Settings > Automated Notification > Notification Day free-text input with a dropdown listing all seven weekdays (matching the Member Contribution > Select Member dropdown style), so users no longer need to type the day of the week.
+Version: 0.0.55 - Widened the Settings > Automated Notification > Notification Day field and narrowed the Notification Time field so weekday names display on a single line.
+Version: 0.0.56 - Made the Admin Panel and Settings accordion buttons mutually exclusive (only one section open at a time, and all sections close when leaving the page) and highlighted the Admin Panel > Change Requests button and section outline with a red accent whenever any change request exists.
+

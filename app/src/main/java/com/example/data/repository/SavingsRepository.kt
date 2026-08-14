@@ -287,7 +287,8 @@ class SavingsRepository(
                     if (req.status == "Approved") {
                         when (req.requestType) {
                             "Delete" -> {
-                                val localSaving = savingsDao.getAllSavingsDirect().find { it.id == req.savingsId }
+                                // Comment: Point-query the row by ID instead of re-scanning the whole savings table for each approved request
+                                val localSaving = savingsDao.getSavingsById(req.savingsId)
                                 if (localSaving != null) {
                                     // Comment: Delete the saving locally since its deletion was approved by the admin
                                     savingsDao.deleteSavings(localSaving)
@@ -300,7 +301,8 @@ class SavingsRepository(
                                 }
                             }
                             "Edit" -> {
-                                val localSaving = savingsDao.getAllSavingsDirect().find { it.id == req.savingsId }
+                                // Comment: Point-query the row by ID instead of re-scanning the whole savings table for each approved request
+                                val localSaving = savingsDao.getSavingsById(req.savingsId)
                                 if (localSaving != null) {
                                     val originalAmt = localSaving.amount
                                     val newAmt = req.newAmount ?: originalAmt
@@ -441,8 +443,9 @@ class SavingsRepository(
             val localSavingsRaw = savingsDao.getAllSavingsDirect()
 
             // Filter out savings records that reference deleted or seeded members
-            val currentLocalMembers = memberDao.getAllMembersDirect()
-            val activeMemberIds = currentLocalMembers.map { it.id }.toSet()
+            // Comment: Reuse the active member ID set already built during the members sync above instead of
+            // re-reading the whole members table; deDuplicatedIds already excludes deleted and seeded members
+            val activeMemberIds = deDuplicatedIds
 
             val filteredRemoteSavingsRaw = remoteSavingsRaw.filter { it.memberId in activeMemberIds }
             val filteredLocalSavingsRaw = localSavingsRaw.filter { it.memberId in activeMemberIds }

@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
 
     // Comment: Override onResume to force a complete layout and redraw of the window's decor view.
     // This solves the rendering hang on warm relaunch where the Compose UI stays white/blank until touched.
+    // TODO: Investigate the underlying warm-relaunch rendering hang so this force-redraw workaround can be removed.
     override fun onResume() {
         super.onResume()
         try {

@@ -56,15 +56,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedMemberForContribution = MutableStateFlow<Member?>(null)
     val selectedMemberForContribution: StateFlow<Member?> = _selectedMemberForContribution
 
-    // Admin panel accordion open/close persistent states (Defaulted to false so they are closed by default when the app starts)
-    private val _isAdminContributionOpen = MutableStateFlow(false)
-    val isAdminContributionOpen: StateFlow<Boolean> = _isAdminContributionOpen
-
-    private val _isAdminActiveCycleOpen = MutableStateFlow(false)
-    val isAdminActiveCycleOpen: StateFlow<Boolean> = _isAdminActiveCycleOpen
-
-    private val _isAdminChangeRequestsOpen = MutableStateFlow(false)
-    val isAdminChangeRequestsOpen: StateFlow<Boolean> = _isAdminChangeRequestsOpen
+    // Admin panel accordion open/close state: only one section can be open at a time (null means all closed)
+    private val _adminOpenSection = MutableStateFlow<String?>(null)
+    val adminOpenSection: StateFlow<String?> = _adminOpenSection.asStateFlow()
 
     // Comment: Store state for manual database syncing with Supabase
     private val _isManualSyncing = MutableStateFlow(false)
@@ -100,6 +94,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 if (settings.personalGoal == 5000.0) {
                     repository.updateSettings(settings.copy(personalGoal = 500.0))
                 }
+            }
+
+            // Comment: Schedule the weekly reminder once on startup from the persisted settings (single source of truth)
+            repository.getSettingsDirect()?.let { startupSettings ->
+                com.example.ui.notification.NotificationScheduler.scheduleNotification(getApplication(), startupSettings)
             }
 
             // Comment: Automatically restore the user's logged-in session on startup if a valid Supabase session is persisted
@@ -211,17 +210,19 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         _selectedMemberForContribution.value = member
     }
 
-    // Toggle states for the persistent admin panel accordions
-    fun setAdminContributionOpen(open: Boolean) {
-        _isAdminContributionOpen.value = open
+    // Comment: Open the given Admin Panel accordion section, closing the previously open one (only one at a time)
+    fun toggleAdminSection(section: String) {
+        _adminOpenSection.value = if (_adminOpenSection.value == section) null else section
     }
 
-    fun setAdminActiveCycleOpen(open: Boolean) {
-        _isAdminActiveCycleOpen.value = open
+    // Comment: Open the given Admin Panel accordion section without toggling (used by deep-link navigation)
+    fun openAdminSection(section: String) {
+        _adminOpenSection.value = section
     }
 
-    fun setAdminChangeRequestsOpen(open: Boolean) {
-        _isAdminChangeRequestsOpen.value = open
+    // Comment: Close all Admin Panel accordion sections (used when the user navigates to another page)
+    fun closeAllAdminSections() {
+        _adminOpenSection.value = null
     }
 
     // Comment: Trigger a manual bidirectional data sync with Supabase tables and update local Room DB cache
@@ -369,14 +370,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     ) {
         viewModelScope.launch {
             val current = repository.getSettingsDirect() ?: AppSettings()
-            repository.updateSettings(
-                current.copy(
-                    enableNotifications = enabled,
-                    notificationDay = day,
-                    notificationTime = time,
-                    notificationText = text
-                )
+            val updated = current.copy(
+                enableNotifications = enabled,
+                notificationDay = day,
+                notificationTime = time,
+                notificationText = text
             )
+            repository.updateSettings(updated)
+            // Comment: Schedule (or cancel) the weekly reminder from this single source of truth when notification settings change
+            com.example.ui.notification.NotificationScheduler.scheduleNotification(getApplication(), updated)
         }
     }
 
@@ -1064,9 +1066,20 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     fun logout() {
         com.example.data.SupabaseClient.clearSession()
         _currentUserId.value = null
+        // Comment: Reset auth-related UI state so a logged-out user cannot see stale login dialogs or errors
+        _googleLoginLoading.value = false
+        _googleLoginError.value = null
+        _showResetPasswordDialog.value = false
     }
 
     companion object {
+        // Comment: Admin Panel accordion section keys (only one section can be open at a time)
+        const val SECTION_CONTRIBUTION = "contribution"
+        const val SECTION_ACTIVE_CYCLE = "activeCycle"
+        const val SECTION_CHANGE_REQUESTS = "changeRequests"
+        const val SECTION_MEMBERS = "members"
+        const val SECTION_REPORTS = "reports"
+
         val seedEmails = setOf(
             "sarah.j@example.com",
             "m.reyes@example.com",

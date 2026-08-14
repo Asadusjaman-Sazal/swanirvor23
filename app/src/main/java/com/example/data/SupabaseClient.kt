@@ -24,7 +24,13 @@ object SupabaseClient {
     private val SUPABASE_URL = com.example.BuildConfig.SUPABASE_URL
     private val SUPABASE_PUBLIC_KEY = com.example.BuildConfig.SUPABASE_ANON_KEY
 
-    private val client = OkHttpClient()
+    // Comment: Bound connect/read/write times so a stalled Supabase request cannot hang a sync or auth call indefinitely
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private var sharedPreferences: android.content.SharedPreferences? = null

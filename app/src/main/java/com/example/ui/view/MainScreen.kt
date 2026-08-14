@@ -432,11 +432,6 @@ fun MainAppContent(viewModel: SavingsViewModel) {
         }
     }
 
-    // Comment: Reactively schedule or update system-level alarms whenever the app settings are loaded or changed
-    androidx.compose.runtime.LaunchedEffect(appSettings) {
-        com.example.ui.notification.NotificationScheduler.scheduleNotification(context, appSettings)
-    }
-
     // Retrieve user savings to check payment status in the active cycle
     val currentUserSavings by viewModel.currentUserSavings.collectAsStateWithLifecycle()
 
@@ -469,6 +464,13 @@ fun MainAppContent(viewModel: SavingsViewModel) {
         }
     }
 
+    // Comment: Close any open Admin Panel section when the user navigates away from the Admin page
+    LaunchedEffect(activeTab) {
+        if (activeTab != AppTab.Admin) {
+            viewModel.closeAllAdminSections()
+        }
+    }
+
     // Comment: Collect pending navigation routes to route the admin to Admin Panel > Change Requests if notification is clicked
     val pendingNavigationRoute by viewModel.pendingNavigationRoute.collectAsStateWithLifecycle()
     LaunchedEffect(pendingNavigationRoute, isAdmin) {
@@ -476,7 +478,7 @@ fun MainAppContent(viewModel: SavingsViewModel) {
             if (route == "admin_change_requests") {
                 if (isAdmin) {
                     activeTab = AppTab.Admin
-                    viewModel.setAdminChangeRequestsOpen(true)
+                    viewModel.openAdminSection(SavingsViewModel.SECTION_CHANGE_REQUESTS)
                 }
                 viewModel.clearPendingNavigation()
             }
@@ -2332,13 +2334,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
 
     var selectedActiveCycleTab by remember { mutableStateOf("Unpaid") }
 
-    // Accordion Expansion States collected from the ViewModel for persistent state across screens
-    val isContributionOpen by viewModel.isAdminContributionOpen.collectAsStateWithLifecycle()
-    val isActiveCycleOpen by viewModel.isAdminActiveCycleOpen.collectAsStateWithLifecycle()
-    val isChangeRequestsOpen by viewModel.isAdminChangeRequestsOpen.collectAsStateWithLifecycle()
-    // Comment: isNotificationOpen has been moved to SettingsScreen as the Automated Notification section is now in Settings
-    var isMembersOpen by remember { mutableStateOf(false) }
-    var isReportsOpen by remember { mutableStateOf(false) }
+    // Comment: Track the single open Admin Panel accordion section (null = all closed); opening one closes the others
+    val adminOpenSection by viewModel.adminOpenSection.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -2351,8 +2348,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Member Contribution",
             icon = Icons.Default.Payments,
-            isOpen = isContributionOpen,
-            onToggle = { viewModel.setAdminContributionOpen(!isContributionOpen) },
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_CONTRIBUTION,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_CONTRIBUTION) },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -2508,8 +2505,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "This Week's Payment",
             icon = Icons.Default.Update,
-            isOpen = isActiveCycleOpen,
-            onToggle = { viewModel.setAdminActiveCycleOpen(!isActiveCycleOpen) },
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_ACTIVE_CYCLE,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_ACTIVE_CYCLE) },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -2718,9 +2715,11 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Change Requests (${pendingRequests.size})",
             icon = Icons.Default.PendingActions,
-            isOpen = isChangeRequestsOpen,
-            onToggle = { viewModel.setAdminChangeRequestsOpen(!isChangeRequestsOpen) },
-            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_CHANGE_REQUESTS,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_CHANGE_REQUESTS) },
+            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White,
+            // Comment: Highlight the Change Request button and section outline with a red accent whenever any change request exists
+            accentColor = if (changeRequests.isNotEmpty()) Color(0xFFD32F2F) else null
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -2918,8 +2917,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Members Management",
             icon = Icons.Default.ManageAccounts,
-            isOpen = isMembersOpen,
-            onToggle = { isMembersOpen = !isMembersOpen },
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_MEMBERS,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_MEMBERS) },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -3051,8 +3050,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Reports & Export",
             icon = Icons.Default.Description,
-            isOpen = isReportsOpen,
-            onToggle = { isReportsOpen = !isReportsOpen },
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_REPORTS,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_REPORTS) },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -3544,13 +3543,14 @@ fun AccordionCard(
     isOpen: Boolean,
     onToggle: () -> Unit,
     containerColor: Color = Color.White,
+    accentColor: Color? = null,
     content: @Composable () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        border = BorderStroke(1.5.dp, accentColor ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
         Column {
             Row(
@@ -3565,8 +3565,16 @@ fun AccordionCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(imageVector = icon, contentDescription = title, tint = MaterialTheme.colorScheme.primary)
-                    Text(text = title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = title,
+                        tint = accentColor ?: MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = accentColor ?: Color.Unspecified
+                    )
                 }
                 Icon(
                     imageVector = if (isOpen) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -3586,6 +3594,7 @@ fun AccordionCard(
 /**
  * Settings Screen Composable (Settings tab)
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: SavingsViewModel) {
     val context = LocalContext.current
@@ -3598,17 +3607,18 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
     var profileNameText by remember { mutableStateOf(appSettings.profileName) }
     var membershipNoText by remember { mutableStateOf(appSettings.membershipNo) }
 
-    // Toggle states for the collapsible sections in the Settings screen (closed/collapsed by default)
-    var isThemeOpen by remember { mutableStateOf(false) }
-    var isSavingsOpen by remember { mutableStateOf(false) }
-    var isProfileOpen by remember { mutableStateOf(false) }
+    // Comment: Track the single open Settings accordion section (null = all closed); only one can be open at a time
+    var settingsOpenSection by remember { mutableStateOf<String?>(null) }
 
-    // Comment: Local states for the Automated Notification section, now placed within Settings screen
-    var isNotificationOpen by remember { mutableStateOf(false) }
+    // Comment: Toggle the given Settings section, closing it again if it is already open
+    fun toggleSettingsSection(section: String) {
+        settingsOpenSection = if (settingsOpenSection == section) null else section
+    }
     var notificationsEnabled by remember { mutableStateOf(appSettings.enableNotifications) }
     var notificationDay by remember { mutableStateOf(appSettings.notificationDay) }
     var notificationTime by remember { mutableStateOf(appSettings.notificationTime) }
     var notificationText by remember { mutableStateOf(appSettings.notificationText) }
+    var showNotificationDayDropdown by remember { mutableStateOf(false) }
 
     // Launcher to select a profile picture from device media gallery
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -3650,8 +3660,8 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Theme",
             icon = Icons.Default.Palette,
-            isOpen = isThemeOpen,
-            onToggle = { isThemeOpen = !isThemeOpen },
+            isOpen = settingsOpenSection == "theme",
+            onToggle = { toggleSettingsSection("theme") },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -3716,8 +3726,8 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Weekly Savings Goal",
             icon = Icons.Default.Savings,
-            isOpen = isSavingsOpen,
-            onToggle = { isSavingsOpen = !isSavingsOpen },
+            isOpen = settingsOpenSection == "savings",
+            onToggle = { toggleSettingsSection("savings") },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -3775,8 +3785,8 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Automated Notification",
             icon = Icons.Default.NotificationsActive,
-            isOpen = isNotificationOpen,
-            onToggle = { isNotificationOpen = !isNotificationOpen },
+            isOpen = settingsOpenSection == "notification",
+            onToggle = { toggleSettingsSection("notification") },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(
@@ -3803,16 +3813,41 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Comment: Give the day field more width so weekday names stay on a single line; the time field is correspondingly narrower
+                    Column(modifier = Modifier.weight(1.5f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             "Notification Day",
                             style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                         )
-                        OutlinedTextField(
-                            value = notificationDay,
-                            onValueChange = { notificationDay = it },
-                            shape = RoundedCornerShape(8.dp)
-                        )
+                        ExposedDropdownMenuBox(
+                            expanded = showNotificationDayDropdown,
+                            onExpandedChange = { showNotificationDayDropdown = !showNotificationDayDropdown }
+                        ) {
+                            OutlinedTextField(
+                                value = notificationDay,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showNotificationDayDropdown) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            ExposedDropdownMenu(
+                                expanded = showNotificationDayDropdown,
+                                onDismissRequest = { showNotificationDayDropdown = false }
+                            ) {
+                                listOf("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday").forEach { day ->
+                                    DropdownMenuItem(
+                                        text = { Text(day) },
+                                        onClick = {
+                                            notificationDay = day
+                                            showNotificationDayDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -3870,8 +3905,8 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         AccordionCard(
             title = "Profile Information",
             icon = Icons.Default.Person,
-            isOpen = isProfileOpen,
-            onToggle = { isProfileOpen = !isProfileOpen },
+            isOpen = settingsOpenSection == "profile",
+            onToggle = { toggleSettingsSection("profile") },
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         ) {
             Column(

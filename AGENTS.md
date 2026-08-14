@@ -30,15 +30,17 @@ Guidelines for AI coding agents (and human contributors) working in this reposit
 
 10. **Scope.** Only touch files/sections the current task instructs you to. Never implement future tasks early.
 
-11. **Maintain the version history on every edit.** Every change gets a snippet in the version history file. The project currently keeps this in `versionHistory.txt` (root), which `app/build.gradle.kts` parses — it reads the `Current Version:` line to set `versionName`. Keep the history in the single file the build reads (`versionHistory.txt`, or `versionHistory.md` once migrated — never maintain two divergent history files; keep the build's file reference in sync).
+11. **Maintain the version history on every edit.** Every change gets a snippet in the version history file. The project currently keeps this in `versionHistory.txt` (root), which `app/build.gradle.kts` parses — it reads the `Current Version:` line to set `versionName`. Keep the history in the single file the build reads (`versionHistory.txt`, or `versionHistory.md` once migrated — never maintain two divergent history files; keep the build's file reference in sync). 
 
-   Format — add a new line at the top and bump the version:
+   Format — Append version log at the end of last line in versionHistory.txt and bump the version number of Current Version (only with the version number):
 
    ```txt
    Current Version: 0.0.43
-
-   Version: 0.0.43 - <short description of the change>
-   Version: 0.0.42 - Removed the redundant "Security" section...
+   -----------------------
+   Version History:
+   ----------------
+   Version: 0.0.42 - <short description of the change>
+   Version: 0.0.43 - Removed the redundant "Security" section...
    ```
 
    The last version in the file **is** the app's version — update it as part of every change.

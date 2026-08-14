@@ -54,11 +54,15 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Comment: BroadcastReceiver to listen for boot and alarm triggers to post notifications -->
+        <!-- Comment: BroadcastReceiver to listen for boot and alarm triggers to post notifications.
+        exported=true is required because BOOT_COMPLETED is sent by the system: on Android 12+,
+        a manifest-declared receiver with exported=false never receives system broadcasts, so the
+        weekly alarm would not be rescheduled after a reboot. -->
         <receiver
             android:name=".ui.notification.NotificationReceiver"
             android:enabled="true"
-            android:exported="false">
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
