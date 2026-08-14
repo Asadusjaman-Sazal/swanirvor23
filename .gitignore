@@ -1,30 +1,4 @@
-# Gradle files
-.gradle/
-build/
-**/build/
-
-# Kotlin compiler files
-.kotlin/
-
-# IDE settings (Android Studio / IntelliJ)
-.idea/
-*.iml
-*.ipr
-*.iws
-out/
-
-# Local configurations & secrets
-local.properties
-.env
-
-# Keystores & signing keys
-*.keystore
-*.jks
-!debug.keystore
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Optional / Custom database script backup
-supabaseSql.txt
+```
+# Documentation
+IMPLEMENTATION_PLAN.md
+```
