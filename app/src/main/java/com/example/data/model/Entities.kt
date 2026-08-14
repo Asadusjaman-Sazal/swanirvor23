@@ -18,8 +18,6 @@ data class Member(
     val status: String = "Active", // "Active" or "Suspended"
     // Comment: Field to track if an admin has sent a targeted notification reminder to this specific member
     val receivedAdminNotification: Boolean = false,
-    // Comment: Store member's password for secure login, default is "password" for seeded members
-    val password: String = "password",
     // Comment: Store member's custom membership number assigned upon signup or registration
     val membershipNo: String = ""
 )
@@ -35,7 +33,9 @@ data class Savings(
     val memberName: String,
     val amount: Double,
     val dateText: String, // e.g., "Oct 17, 2023"
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    // Comment: Stable client-generated UUID used to match local and remote savings rows across two independent numeric ID sequences
+    val syncKey: String = ""
 )
 
 /**

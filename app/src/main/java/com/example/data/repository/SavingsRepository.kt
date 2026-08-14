@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import android.util.Log
 
 /**
@@ -48,9 +50,8 @@ class SavingsRepository(
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
             val inserted = com.example.data.SupabaseClient.dbInsertMember(localMemberWithId)
             if (inserted != null && inserted.id != localMemberWithId.id) {
-                // Comment: Update local record with the auto-generated SERIAL remote database ID to avoid primary key conflicts
-                memberDao.deleteMember(localMemberWithId)
-                memberDao.insertMember(inserted)
+                // Comment: Atomically swap the local auto-increment row for the remote SERIAL row so a crash cannot leave a missing member
+                memberDao.replaceMemberWithRemote(localMemberWithId, inserted)
             }
         }
     }
@@ -82,8 +83,12 @@ class SavingsRepository(
     }
 
     suspend fun insertSavings(savings: Savings) = withContext(Dispatchers.IO) {
-        val localId = savingsDao.insertSavings(savings).toInt()
-        val localSavingsWithId = savings.copy(id = localId)
+        // Comment: Assign a stable client-generated UUID match key to new entries so local and remote rows can be matched without relying on numeric IDs
+        val savingsWithKey = if (savings.syncKey.isBlank()) {
+            savings.copy(syncKey = java.util.UUID.randomUUID().toString())
+        } else savings
+        val localId = savingsDao.insertSavings(savingsWithKey).toInt()
+        val localSavingsWithId = savingsWithKey.copy(id = localId)
         // Dynamically update the member's totalSavings in the database
         val member = memberDao.getMemberById(localSavingsWithId.memberId)
         if (member != null) {
@@ -94,23 +99,26 @@ class SavingsRepository(
                 com.example.data.SupabaseClient.dbUpdateMember(updatedMember)
             }
         }
-        // Comment: Sync savings contribution to Supabase remote database table
+        // Comment: Sync savings contribution to Supabase remote database table (upserted on sync_key)
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
-            val inserted = com.example.data.SupabaseClient.dbInsertSavings(localSavingsWithId)
+            val inserted = com.example.data.SupabaseClient.dbUpsertSavings(localSavingsWithId)
             if (inserted != null && inserted.id != localSavingsWithId.id) {
-                // Comment: Update local record with the auto-generated SERIAL remote database ID to avoid primary key conflicts
-                savingsDao.deleteSavings(localSavingsWithId)
-                savingsDao.insertSavings(inserted)
+                // Comment: Atomically swap the local auto-increment row for the remote SERIAL row so a crash cannot leave a missing savings entry
+                savingsDao.replaceSavingsWithRemote(localSavingsWithId, inserted)
             }
         }
     }
 
     suspend fun updateSavings(savings: Savings, oldAmount: Double) = withContext(Dispatchers.IO) {
-        savingsDao.updateSavings(savings)
+        // Comment: Preserve the row's stable sync key when callers pass a partially-populated Savings
+        // (the admin approval flow omits syncKey), so a full-row @Update does not wipe it
+        val existing = savingsDao.getSavingsById(savings.id)
+        val effective = savings.copy(syncKey = savings.syncKey.ifBlank { existing?.syncKey ?: java.util.UUID.randomUUID().toString() })
+        savingsDao.updateSavings(effective)
         // Dynamically update the member's totalSavings in the database
-        val member = memberDao.getMemberById(savings.memberId)
+        val member = memberDao.getMemberById(effective.memberId)
         if (member != null) {
-            val updatedMember = member.copy(totalSavings = member.totalSavings - oldAmount + savings.amount)
+            val updatedMember = member.copy(totalSavings = member.totalSavings - oldAmount + effective.amount)
             memberDao.updateMember(updatedMember)
             // Comment: Sync updated member totalSavings to Supabase remote database table
             if (com.example.data.SupabaseClient.getAccessToken() != null) {
@@ -119,11 +127,15 @@ class SavingsRepository(
         }
         // Comment: Sync updated savings contribution to Supabase remote database table
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
-            com.example.data.SupabaseClient.dbUpdateSavings(savings)
+            com.example.data.SupabaseClient.dbUpdateSavings(effective)
         }
     }
 
     suspend fun deleteSavings(savings: Savings) = withContext(Dispatchers.IO) {
+        // Comment: Resolve the row's stable sync key before deleting so the remote soft-delete
+        // targets the correct row even when the caller passed a partial Savings object
+        val existing = savingsDao.getSavingsById(savings.id)
+        val effective = savings.copy(syncKey = savings.syncKey.ifBlank { existing?.syncKey ?: "" })
         savingsDao.deleteSavings(savings)
         // Dynamically update the member's totalSavings in the database
         val member = memberDao.getMemberById(savings.memberId)
@@ -137,7 +149,7 @@ class SavingsRepository(
         }
         // Comment: Sync savings contribution deletion to Supabase remote database table
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
-            com.example.data.SupabaseClient.dbDeleteSavings(savings)
+            com.example.data.SupabaseClient.dbDeleteSavings(effective)
         }
     }
 
@@ -217,9 +229,8 @@ class SavingsRepository(
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
             val inserted = com.example.data.SupabaseClient.dbInsertChangeRequest(localRequestWithId)
             if (inserted != null && inserted.id != localRequestWithId.id) {
-                // Comment: Update local record with the auto-generated SERIAL remote database ID to avoid primary key conflicts
-                changeRequestDao.deleteChangeRequest(localRequestWithId)
-                changeRequestDao.insertChangeRequest(inserted)
+                // Comment: Atomically swap the local auto-increment row for the remote SERIAL row so a crash cannot leave a missing change request
+                changeRequestDao.replaceChangeRequestWithRemote(localRequestWithId, inserted)
             }
         }
     }
@@ -245,9 +256,24 @@ class SavingsRepository(
      * Fully implements bidirectional sync (both pulling and pushing), preserving roles, mapped foreign keys,
      * and auto-resolving local vs. remote ID conflicts.
      */
-    suspend fun syncWithSupabase(): List<ChangeRequest> = withContext(Dispatchers.IO) {
+    // Comment: Serialize concurrent sync calls so overlapping syncs cannot mutate the same tables and produce duplicate or lost rows
+    private val syncMutex = Mutex()
+
+    suspend fun syncWithSupabase(): List<ChangeRequest> = syncMutex.withLock {
+        syncWithSupabaseInternal()
+    }
+
+    private suspend fun syncWithSupabaseInternal(): List<ChangeRequest> = withContext(Dispatchers.IO) {
         val newPendingRequests = mutableListOf<ChangeRequest>()
         val token = com.example.data.SupabaseClient.getAccessToken() ?: return@withContext emptyList()
+        // Comment: Refresh the access token before syncing if it is close to expiry, so the sync does not fail mid-flight with a 401
+        if (com.example.data.SupabaseClient.isSessionExpiringSoon()) {
+            val refreshResult = com.example.data.SupabaseClient.refreshAccessToken()
+            if (!refreshResult.success) {
+                Log.w("SupabaseSync", "Access token could not be refreshed: ${refreshResult.message}")
+                return@withContext emptyList()
+            }
+        }
         Log.d("SupabaseSync", "Starting comprehensive bidirectional database synchronization with Supabase...")
 
         try {
@@ -411,60 +437,63 @@ class SavingsRepository(
             }
 
             // --- 2. Sync Savings ---
-            val remoteSavings = com.example.data.SupabaseClient.dbFetchSavings()
-            val localSavings = savingsDao.getAllSavingsDirect()
+            val remoteSavingsRaw = com.example.data.SupabaseClient.dbFetchSavings()
+            val localSavingsRaw = savingsDao.getAllSavingsDirect()
 
             // Filter out savings records that reference deleted or seeded members
             val currentLocalMembers = memberDao.getAllMembersDirect()
             val activeMemberIds = currentLocalMembers.map { it.id }.toSet()
 
-            val filteredRemoteSavings = remoteSavings.filter { it.memberId in activeMemberIds }
-            val filteredLocalSavings = localSavings.filter { it.memberId in activeMemberIds }
+            val filteredRemoteSavingsRaw = remoteSavingsRaw.filter { it.memberId in activeMemberIds }
+            val filteredLocalSavingsRaw = localSavingsRaw.filter { it.memberId in activeMemberIds }
 
-            // Map remote savings by ID
-            val remoteSavingsById = filteredRemoteSavings.associateBy { it.id }
-            val localSavingsById = filteredLocalSavings.associateBy { it.id }
+            // Comment: One-time backfill that gives every pre-existing savings row a stable UUID match key,
+            // so all subsequent syncs can match purely on sync_key instead of two independent numeric ID sequences
+            val (remoteSavings, localSavings) = backfillSavingsSyncKeys(filteredRemoteSavingsRaw, filteredLocalSavingsRaw)
+
+            // Comment: Remote savings that were soft-deleted must be removed locally, never re-pushed, or they would resurrect
+            val deletedRemoteIds = com.example.data.SupabaseClient.dbFetchDeletedSavingsIds()
+            val deletedRemoteKeys = com.example.data.SupabaseClient.dbFetchDeletedSavingsKeys()
+
+            // Map remote and local savings by their stable sync key
+            val remoteSavingsByKey = remoteSavings.associateBy { it.syncKey }
+            val localSavingsByKey = localSavings.associateBy { it.syncKey }
 
             // Match and Push local savings that are not in Supabase
-            for (localSaving in filteredLocalSavings) {
-                val remoteSaving = remoteSavingsById[localSaving.id]
+            for (localSaving in localSavings) {
+                if (localSaving.syncKey.isBlank()) continue
+                // Comment: A local row whose sync key (or legacy numeric id) was soft-deleted remotely is stale; drop it locally and adjust the member total instead of pushing it back
+                val isStaleDelete = localSaving.syncKey in deletedRemoteKeys || localSaving.id in deletedRemoteIds
+                if (isStaleDelete) {
+                    savingsDao.deleteSavings(localSaving)
+                    val m = memberDao.getMemberById(localSaving.memberId)
+                    if (m != null) {
+                        memberDao.updateMember(m.copy(totalSavings = maxOf(0.0, m.totalSavings - localSaving.amount)))
+                    }
+                    continue
+                }
+                val remoteSaving = remoteSavingsByKey[localSaving.syncKey]
                 if (remoteSaving == null) {
-                    // Check if there is a matching remote record by details to avoid duplicate insertions
-                    val isDuplicate = filteredRemoteSavings.any {
-                        it.memberId == localSaving.memberId &&
-                                it.amount == localSaving.amount &&
-                                it.dateText == localSaving.dateText &&
-                                it.timestamp == localSaving.timestamp
+                    // Push new saving contribution to remote (upserted on sync_key)
+                    val inserted = com.example.data.SupabaseClient.dbUpsertSavings(localSaving)
+                    if (inserted != null && inserted.id != localSaving.id) {
+                        savingsDao.replaceSavingsWithRemote(localSaving, inserted)
                     }
-                    if (!isDuplicate) {
-                        // Push new saving contribution to remote
-                        val inserted = com.example.data.SupabaseClient.dbInsertSavings(localSaving)
-                        if (inserted != null && inserted.id != localSaving.id) {
-                            savingsDao.deleteSavings(localSaving)
-                            savingsDao.insertSavings(inserted)
-                        }
-                    }
-                } else {
-                    // If remote exists but differs, update local record with the remote record
-                    if (localSaving != remoteSaving) {
+                } else if (localSaving != remoteSaving) {
+                    // Remote is the source of truth; align the local row without leaving a duplicate when the IDs differ
+                    if (localSaving.id != remoteSaving.id) {
+                        savingsDao.replaceSavingsWithRemote(localSaving, remoteSaving)
+                    } else {
                         savingsDao.insertSavings(remoteSaving)
                     }
                 }
             }
 
             // Pull any remote savings who are not present locally
-            for (remoteSaving in filteredRemoteSavings) {
-                if (remoteSaving.id !in localSavingsById) {
-                    // Check if duplicate exists locally by details
-                    val isDuplicate = filteredLocalSavings.any {
-                        it.memberId == remoteSaving.memberId &&
-                                it.amount == remoteSaving.amount &&
-                                it.dateText == remoteSaving.dateText &&
-                                it.timestamp == remoteSaving.timestamp
-                    }
-                    if (!isDuplicate) {
-                        savingsDao.insertSavings(remoteSaving)
-                    }
+            for (remoteSaving in remoteSavings) {
+                if (remoteSaving.syncKey.isBlank()) continue
+                if (localSavingsByKey[remoteSaving.syncKey] == null) {
+                    savingsDao.insertSavings(remoteSaving)
                 }
             }
 
@@ -568,6 +597,69 @@ class SavingsRepository(
                 com.example.data.SupabaseClient.dbUpdateChangeRequest(updatedReq)
             }
         }
+    }
+
+    /**
+     * Comment: One-time backfill that assigns a stable client-generated UUID match key to every
+     * pre-existing savings row (local and remote) so future syncs match purely on sync_key.
+     * Idempotent: rows that already carry a key are left untouched, so it naturally runs once.
+     */
+    private suspend fun backfillSavingsSyncKeys(
+        remoteSavings: List<Savings>,
+        localSavings: List<Savings>
+    ): Pair<List<Savings>, List<Savings>> {
+        val updatedRemote = remoteSavings.toMutableList()
+        val updatedLocal = localSavings.toMutableList()
+
+        // Comment: Self-heal any remote rows still missing a key (server-side backfill not yet run).
+        // The key is derived deterministically from the remote id so every device assigns the same value,
+        // preventing cross-device divergence during the backfill window.
+        for (i in updatedRemote.indices) {
+            val remote = updatedRemote[i]
+            if (remote.syncKey.isBlank()) {
+                val key = java.util.UUID.nameUUIDFromBytes("savings:${remote.id}".toByteArray(Charsets.UTF_8)).toString()
+                com.example.data.SupabaseClient.dbPatchSavingsSyncKey(remote.id, key)
+                updatedRemote[i] = remote.copy(syncKey = key)
+            }
+        }
+
+        val remoteById = updatedRemote.associateBy { it.id }
+
+        // Comment: Backfill local rows missing a key by adopting the matching remote key, or generating a fresh key for genuinely local-only rows and pushing them up
+        for (i in updatedLocal.indices) {
+            val local = updatedLocal[i]
+            if (local.syncKey.isNotBlank()) continue
+
+            // Exact details match is the primary bridge; the numeric id match (same member) catches
+            // rows whose amount/date were legitimately edited before the key existed.
+            val detailsMatch = updatedRemote.firstOrNull {
+                it.memberId == local.memberId &&
+                        it.amount == local.amount &&
+                        it.dateText == local.dateText &&
+                        it.timestamp == local.timestamp
+            }
+            val idMatch = if (detailsMatch == null) {
+                remoteById[local.id]?.takeIf { it.memberId == local.memberId }
+            } else null
+            val matchedRemote = detailsMatch ?: idMatch
+
+            if (matchedRemote != null) {
+                savingsDao.updateSavings(local.copy(syncKey = matchedRemote.syncKey))
+                updatedLocal[i] = local.copy(syncKey = matchedRemote.syncKey)
+            } else {
+                val freshKey = java.util.UUID.randomUUID().toString()
+                val withKey = local.copy(syncKey = freshKey)
+                savingsDao.updateSavings(withKey)
+                updatedLocal[i] = withKey
+                val inserted = com.example.data.SupabaseClient.dbUpsertSavings(withKey)
+                if (inserted != null && inserted.id != withKey.id) {
+                    savingsDao.replaceSavingsWithRemote(withKey, inserted)
+                    updatedLocal[i] = inserted
+                }
+            }
+        }
+
+        return Pair(updatedRemote, updatedLocal)
     }
 
     companion object {

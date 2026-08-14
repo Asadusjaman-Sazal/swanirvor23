@@ -320,7 +320,7 @@ fun MainScreen(viewModel: SavingsViewModel) {
                             errorMsg = null
                         },
                         label = { Text("New Password") },
-                        placeholder = { Text("At least 6 characters") },
+                        placeholder = { Text("At least 8 characters with letters and numbers") },
                         visualTransformation = if (isPasswordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         leadingIcon = {
@@ -357,8 +357,12 @@ fun MainScreen(viewModel: SavingsViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newPasswordInput.length < 6) {
-                            errorMsg = "Password must be at least 6 characters long."
+                        if (newPasswordInput.length < 8) {
+                            errorMsg = "Password must be at least 8 characters long."
+                            return@Button
+                        }
+                        if (!newPasswordInput.any { it.isDigit() } || !newPasswordInput.any { it.isLetter() }) {
+                            errorMsg = "Password must contain at least one letter and one number."
                             return@Button
                         }
                         isSaving = true

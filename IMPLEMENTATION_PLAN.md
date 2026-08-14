@@ -165,6 +165,8 @@ data class Member(
 
 **Migration**: bump the Room database version and add a real migration (see Phase 4.2). Do **not** rely on instructing users to clear app data.
 
+> **Revision (implemented in Phase 2)**: the `Migration(6, 7)` recreates the `members` table without the `password` column (create-new → copy → drop → rename) instead of `DROP COLUMN`, because SQLite's `DROP COLUMN` is unsupported below API 31 (SQLite < 3.35). `fallbackToDestructiveMigration()` was removed so upgrades preserve local data.
+
 ### 2.2 Remove Password Assignment in the ViewModel
 **File**: `app/src/main/java/com/example/ui/viewmodel/SavingsViewModel.kt`
 

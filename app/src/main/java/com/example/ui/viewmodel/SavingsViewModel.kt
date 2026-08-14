@@ -655,11 +655,16 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         _showResetPasswordDialog.value = visible
     }
 
-    // Comment: Update password for the currently logged-in user session in both remote Supabase and local databases
+    // Comment: Update the password for the currently logged-in user session in Supabase Auth (never stored locally)
     fun updatePassword(newPassword: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            if (newPassword.isBlank() || newPassword.length < 6) {
-                onResult(false, "Password must be at least 6 characters long.")
+            // Comment: Enforce the minimum password policy (8+ characters with at least one letter and one number)
+            if (newPassword.length < 8) {
+                onResult(false, "Password must be at least 8 characters long.")
+                return@launch
+            }
+            if (!newPassword.any { it.isDigit() } || !newPassword.any { it.isLetter() }) {
+                onResult(false, "Password must contain at least one letter and one number.")
                 return@launch
             }
 
@@ -670,16 +675,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            // 2. Update password in our local database and sync if user profile exists
+            // 2. Keep the matched member profile in sync (passwords are managed only by Supabase Auth, never stored locally)
             val currentEmail = com.example.data.SupabaseClient.getSessionEmail()
             var loggedInMember: Member? = null
             if (!currentEmail.isNullOrBlank()) {
                 val membersList = repository.getAllMembersDirect()
                 val matchedMember = membersList.find { it.email.trim().equals(currentEmail.trim(), ignoreCase = true) }
                 if (matchedMember != null) {
-                    val updatedMember = matchedMember.copy(password = newPassword)
-                    repository.updateMember(updatedMember)
-                    loggedInMember = updatedMember
+                    repository.updateMember(matchedMember)
+                    loggedInMember = matchedMember
 
                     // Force complete bidirectional data sync to make sure local/remote updates align
                     try {
@@ -770,7 +774,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     val newMember = Member(
                         name = localName,
                         email = email.trim(),
-                        password = "RecoveredSession",
                         role = assignedRole,
                         status = "Active",
                         totalSavings = 0.0,
@@ -862,7 +865,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     val newMember = Member(
                         name = localName,
                         email = email.trim(),
-                        password = password,
                         role = assignedRole,
                         status = "Active",
                         totalSavings = 0.0,
@@ -902,6 +904,16 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
+            // Comment: Enforce the minimum password policy (8+ characters with at least one letter and one number)
+            if (password.length < 8) {
+                onResult(false, "Password must be at least 8 characters long.")
+                return@launch
+            }
+            if (!password.any { it.isDigit() } || !password.any { it.isLetter() }) {
+                onResult(false, "Password must contain at least one letter and one number.")
+                return@launch
+            }
+
             // Authenticate with Supabase GoTrue Auth signUp
             val supabaseResult = com.example.data.SupabaseClient.signUp(email, password)
             if (!supabaseResult.success) {
@@ -923,7 +935,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val newMember = Member(
                     name = name.trim(),
                     email = email.trim(),
-                    password = password,
                     role = assignedRole,
                     status = "Active",
                     totalSavings = 0.0,
@@ -1016,7 +1027,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     val newMember = Member(
                         name = localName,
                         email = email.trim(),
-                        password = "GoogleOAuth",
                         role = assignedRole,
                         status = "Active",
                         totalSavings = 0.0,

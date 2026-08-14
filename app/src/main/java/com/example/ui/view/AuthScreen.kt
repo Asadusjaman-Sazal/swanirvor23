@@ -545,7 +545,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                             if (!googleLoginLoading && !isLoading) {
                                 // Comment: Force Google Account Chooser screen (prompt select_account) so user can choose or add another Gmail account
                                 // We use percent-encoded brackets (%5B and %5D) so Android Uri.parse and Chrome do not strip or corrupt the queryParams[prompt] parameter
-                                val url = "https://ykbwzodadijtiizobehk.supabase.co/auth/v1/authorize?provider=google&redirect_to=swanirvor23://login-callback&queryParams%5Bprompt%5D=select_account&query_params%5Bprompt%5D=select_account"
+                                val url = "${com.example.BuildConfig.SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=swanirvor23://login-callback&queryParams%5Bprompt%5D=select_account&query_params%5Bprompt%5D=select_account"
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
                                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }

@@ -107,14 +107,16 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             val scheme = uri.scheme
             val host = uri.host
-            android.util.Log.i("MainActivity", "Deep Link received! Scheme: $scheme, Host: $host, URI: $uri")
+            // Redact the URI: it carries the access, provider, and refresh tokens.
+            android.util.Log.i("MainActivity", "Deep Link received! Scheme: $scheme, Host: $host")
             if (scheme == "swanirvor23" || scheme == "com.legumsoft.swanirvor23") {
                 // Access fragment or query
                 val fragment = uri.fragment
                 val query = uri.query
                 val paramStr = if (!fragment.isNullOrBlank()) fragment else if (!query.isNullOrBlank()) query else null
 
-                android.util.Log.d("MainActivity", "Parsing deep link parameters. Fragment: $fragment, Query: $query")
+                // Log presence flags only: the fragment/query values contain raw auth tokens.
+                android.util.Log.d("MainActivity", "Parsing deep link parameters. Fragment present=${!fragment.isNullOrBlank()}, Query present=${!query.isNullOrBlank()}")
                 if (!paramStr.isNullOrBlank()) {
                     val params = parseFragmentParameters(paramStr)
                     val accessToken = params["access_token"]

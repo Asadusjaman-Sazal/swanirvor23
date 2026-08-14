@@ -1,4 +1,4 @@
-Current Version: 0.0.43
+Current Version: 0.0.49
 
 Version: 0.0.1 - Added Sign in/Signup page.
 Version: 0.0.2 - Added Sign in with Google button.
@@ -43,4 +43,9 @@ Version: 0.0.40 - Configured deep linking for password recovery, appending the c
 Version: 0.0.41 - Upgraded password reset flow security; deep linking now displays the "Choose New Password" dialog directly on top of the Sign In page instead of logging the user in automatically, completing login only after a successful password save.
 Version: 0.0.42 - Removed the redundant "Security" section containing the change password launcher from Settings > Profile Information.
 Version: 0.0.43 - Removed the 5-second periodic background sync loop and its lifecycle hooks (startPeriodicSync/stopPeriodicSync/onPause) and replaced the force process kill on exit with a clean finishAndRemoveTask(), eliminating the constant background sync that drained the battery.
-
+Version: 0.0.44 - Removed all plaintext password storage (Room Member entity, Supabase member serialization, and the remote members.password column), moved Supabase credentials out of source into .env/BuildConfig via the Secrets Gradle Plugin, encrypted the session token store with EncryptedSharedPreferences, disabled cloud backup of app data, enforced the 8+ character password policy at signup/reset, and redacted token/PII logging.
+Version: 0.0.45 - Redacted the raw deep-link URI and fragment from MainActivity logging, which were still printing full access, provider, and refresh tokens to logcat.
+Version: 0.0.46 - Added explicit exclude-all rules to backup_rules.xml and data_extraction_rules.xml so adb backup and device-to-device transfer can no longer extract ledger data on Android 12+ (allowBackup=false alone does not stop D2D transfer).
+Version: 0.0.47 - Implemented Phase 3 token management: added isSessionExpiringSoon()/getRefreshToken()/refreshAccessToken() to SupabaseClient, persisted expires_at in the Google OAuth session, and made syncWithSupabase refresh an expiring access token before syncing (aborting when refresh fails).
+Version: 0.0.48 - Implemented Phase 4 data integrity: serialized syncWithSupabase with a mutex, made local-to-remote ID swaps atomic via @Transaction DAO methods, added soft deletes to savings (PATCH deleted=true, fetch filtering, and a sync guard against resurrection), and added an admin DELETE RLS policy for members.
+Version: 0.0.49 - Implemented Phase 4.4 data integrity: added a stable client-generated UUID sync_key to savings, upserted remote rows on that key instead of matching numeric IDs, targeted remote updates/soft-deletes by sync_key with a legacy id fallback, and added a one-time idempotent backfill that assigns shared keys to pre-existing local and remote rows.
