@@ -82,59 +82,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         _pendingNavigationRoute.value = null
     }
 
-    private var syncJob: kotlinx.coroutines.Job? = null
-
-    fun startPeriodicSync() {
-        if (syncJob != null && syncJob?.isActive == true) return
-        android.util.Log.d("SupabaseSync", "Starting lifecycle-aware foreground periodic sync loop...")
-        syncJob = viewModelScope.launch {
-            // Wait 5 seconds after startup before starting periodic background sync to avoid conflicts with startup logic
-            kotlinx.coroutines.delay(5000)
-            while (true) {
-                val email = com.example.data.SupabaseClient.getSessionEmail()
-                if (!email.isNullOrBlank() && !isManualSyncing.value) {
-                    try {
-                        android.util.Log.d("SupabaseSync", "Periodic active-foreground sync triggering...")
-                        val newlyPulled = repository.syncWithSupabase()
-
-                        // Comment: If any new pending change requests were pulled and the current user is an admin, show them notifications
-                        val currentEmail = com.example.data.SupabaseClient.getSessionEmail()
-                        val isCurrentUserAdmin = if (!currentEmail.isNullOrBlank()) {
-                            repository.getAllMembersDirect().find { it.email.trim().equals(currentEmail.trim(), ignoreCase = true) }?.role == "Admin"
-                        } else false
-
-                        if (isCurrentUserAdmin && newlyPulled.isNotEmpty()) {
-                            for (req in newlyPulled) {
-                                val friendlyChangeType = when (req.requestType) {
-                                    "Edit" -> "edit"
-                                    "Delete" -> "delete"
-                                    "RemoveMember" -> "user removal"
-                                    "MakeAdmin", "RemoveAdmin" -> "role change"
-                                    else -> req.requestType
-                                }
-                                com.example.ui.notification.AdminNotificationHelper.showAdminChangeRequestNotification(
-                                    getApplication(),
-                                    req.memberName,
-                                    friendlyChangeType
-                                )
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("SupabaseSync", "Periodic active-foreground sync skipped/failed: ${e.localizedMessage}")
-                    }
-                }
-                // Wait for 5 seconds before the next sync cycle
-                kotlinx.coroutines.delay(5000)
-            }
-        }
-    }
-
-    fun stopPeriodicSync() {
-        android.util.Log.d("SupabaseSync", "Stopping periodic sync loop (inactive/backgrounded)...")
-        syncJob?.cancel()
-        syncJob = null
-    }
-
     init {
         val database = AppDatabase.getDatabase(application)
         repository = SavingsRepository(

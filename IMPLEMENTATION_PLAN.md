@@ -73,11 +73,13 @@ fun stopPeriodicSync() {
 ### 1.2 Remove Sync Calls from MainActivity
 **File**: `app/src/main/java/com/example/MainActivity.kt`
 
+> **Revision (decided during implementation)**: keep `private var savingsViewModel: SavingsViewModel? = null` and its `savingsViewModel = viewModel` assignment. It is still used by `onNewIntent()` to handle deep links (Google OAuth and password-recovery callbacks). Removing it would break deep-link login and would not compile.
+
 **Changes**:
 1. Remove `viewModel.startPeriodicSync()` from `onCreate()`/`setContent`.
 2. Remove `savingsViewModel?.startPeriodicSync()` from `onResume()`.
 3. Delete the entire `onPause()` method (it only called `stopPeriodicSync()`).
-4. Remove `private var savingsViewModel: SavingsViewModel? = null`.
+4. Keep `private var savingsViewModel: SavingsViewModel? = null` — only the sync usage is removed (see revision note above).
 
 ### 1.3 Replace `Process.killProcess()` with a Clean Exit
 **File**: `app/src/main/java/com/example/ui/view/MainScreen.kt`

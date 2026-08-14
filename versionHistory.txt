@@ -1,4 +1,4 @@
-Current Version: 0.0.42
+Current Version: 0.0.43
 
 Version: 0.0.1 - Added Sign in/Signup page.
 Version: 0.0.2 - Added Sign in with Google button.
@@ -42,4 +42,5 @@ Version: 0.0.39 - Added a Forgot Password button on the Sign In screen with a pa
 Version: 0.0.40 - Configured deep linking for password recovery, appending the custom redirect URL to the recovery API, parsing the deep link intent type, and prompting users with an inline Material 3 password reset dialog.
 Version: 0.0.41 - Upgraded password reset flow security; deep linking now displays the "Choose New Password" dialog directly on top of the Sign In page instead of logging the user in automatically, completing login only after a successful password save.
 Version: 0.0.42 - Removed the redundant "Security" section containing the change password launcher from Settings > Profile Information.
+Version: 0.0.43 - Removed the 5-second periodic background sync loop and its lifecycle hooks (startPeriodicSync/stopPeriodicSync/onPause) and replaced the force process kill on exit with a clean finishAndRemoveTask(), eliminating the constant background sync that drained the battery.
 

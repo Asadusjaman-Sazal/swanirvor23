@@ -242,16 +242,9 @@ fun MainScreen(viewModel: SavingsViewModel) {
                 Button(
                     onClick = {
                         showExitDialog = false
-                        // Comment: Completely clear the task stack and kill the process to ensure a 100% clean cold startup on next launch, resolving Compose warm-boot rendering freeze
+                        // Comment: Clear the task stack with a normal activity finish so Android lifecycle cleanup runs and the next launch is a clean cold start without force-killing the process
                         val activity = context as? android.app.Activity
                         activity?.finishAndRemoveTask()
-                        activity?.window?.decorView?.postDelayed({
-                            try {
-                                android.os.Process.killProcess(android.os.Process.myPid())
-                            } catch (e: Exception) {
-                                // Fallback
-                            }
-                        }, 150)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {

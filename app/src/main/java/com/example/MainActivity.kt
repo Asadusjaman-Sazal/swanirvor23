@@ -48,7 +48,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: SavingsViewModel = viewModel()
             savingsViewModel = viewModel
-            viewModel.startPeriodicSync()
             val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
 
             // Comment: Control the display state of the splash screen
@@ -93,12 +92,6 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Failed to force redraw on resume", e)
         }
-        savingsViewModel?.startPeriodicSync()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        savingsViewModel?.stopPeriodicSync()
     }
 
     private fun handleNotificationIntent(intent: android.content.Intent, viewModel: SavingsViewModel) {
