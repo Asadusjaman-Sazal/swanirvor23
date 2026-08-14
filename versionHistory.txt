@@ -1,4 +1,4 @@
-Current Version: 0.0.56
+Current Version: 0.0.57
 -----------------------
 
 Version History:
@@ -59,4 +59,5 @@ Version: 0.0.53 - Made the weekly contribution reminder self-rescheduling: after
 Version: 0.0.54 - Replaced the Settings > Automated Notification > Notification Day free-text input with a dropdown listing all seven weekdays (matching the Member Contribution > Select Member dropdown style), so users no longer need to type the day of the week.
 Version: 0.0.55 - Widened the Settings > Automated Notification > Notification Day field and narrowed the Notification Time field so weekday names display on a single line.
 Version: 0.0.56 - Made the Admin Panel and Settings accordion buttons mutually exclusive (only one section open at a time, and all sections close when leaving the page) and highlighted the Admin Panel > Change Requests button and section outline with a red accent whenever any change request exists.
+Version: 0.0.57 - Fixed admin change/delete request notification clicks restarting the app instead of opening Admin Panel > Change Requests; the notification now resumes the existing task and only clears the pending route after the admin role is loaded and navigation succeeds.
 

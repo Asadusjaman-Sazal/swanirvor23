@@ -479,8 +479,10 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                 if (isAdmin) {
                     activeTab = AppTab.Admin
                     viewModel.openAdminSection(SavingsViewModel.SECTION_CHANGE_REQUESTS)
+                    // Comment: Clear the route only after navigation succeeds so a route received while the
+                    // admin's role is still loading is not discarded before the Admin Panel can open.
+                    viewModel.clearPendingNavigation()
                 }
-                viewModel.clearPendingNavigation()
             }
         }
     }

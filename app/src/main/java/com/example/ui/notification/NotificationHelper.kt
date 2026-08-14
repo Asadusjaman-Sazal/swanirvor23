@@ -252,14 +252,18 @@ object AdminNotificationHelper {
                 notificationManager.createNotificationChannel(channel)
             }
 
-            // Comment: Define an intent to open the app on click and pass a deep navigation extra to trigger the correct page routing
+            // Comment: Define an intent that brings the existing task forward and passes a deep navigation
+            // extra for the correct page routing. Avoid FLAG_ACTIVITY_CLEAR_TASK here because it restarts the
+            // whole task (showing the splash screen) instead of routing the admin to the Admin Panel.
             val openIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("navigate_to", "admin_change_requests")
             }
+            // Comment: Use a notification-specific request code so this PendingIntent cannot be clobbered by
+            // the weekly reminder or user-submitted notifications, which would drop the navigate_to extra.
             val pendingIntent = PendingIntent.getActivity(
                 context,
-                0,
+                NOTIFICATION_ID,
                 openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
