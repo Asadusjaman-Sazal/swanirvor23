@@ -1,0 +1,234 @@
+-- =========================================================================
+-- 1. Create the members table (relates to Supabase Auth Users)
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.members (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    avatar_url TEXT,
+    total_savings DOUBLE PRECISION DEFAULT 0.0,
+    role TEXT DEFAULT 'Member',
+    status TEXT DEFAULT 'Active',
+    received_admin_notification BOOLEAN DEFAULT false,
+    password TEXT DEFAULT 'password',
+    membership_no TEXT DEFAULT 'LS-2023-000',
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- =========================================================================
+-- 2. Create the savings table
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.savings (
+    id SERIAL PRIMARY KEY,
+    member_id INTEGER REFERENCES public.members(id) ON DELETE CASCADE,
+    member_name TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
+    date_text TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    deleted BOOLEAN DEFAULT false,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Soft-delete columns for pre-existing savings tables (idempotent)
+ALTER TABLE public.savings ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;
+ALTER TABLE public.savings ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_savings_deleted ON public.savings(deleted);
+
+-- =========================================================================
+-- 3. Create the app_settings table
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.app_settings (
+    id SERIAL PRIMARY KEY,
+    personal_goal DOUBLE PRECISION DEFAULT 500.0,
+    profile_name TEXT NOT NULL DEFAULT 'John Doe',
+    membership_no TEXT NOT NULL DEFAULT 'LS-2023-089',
+    is_dark_mode BOOLEAN DEFAULT false,
+    notification_day TEXT DEFAULT 'Thursday',
+    notification_time TEXT DEFAULT '09:00',
+    notification_text TEXT DEFAULT 'Reminder: Your weekly contribution of ৳500 is due tomorrow.',
+    enable_notifications BOOLEAN DEFAULT true,
+    profile_image_url TEXT,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid() UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- =========================================================================
+-- 4. Create the change_requests table
+-- =========================================================================
+CREATE TABLE IF NOT EXISTS public.change_requests (
+    id SERIAL PRIMARY KEY,
+    savings_id INTEGER,
+    member_id INTEGER REFERENCES public.members(id) ON DELETE CASCADE,
+    member_name TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    original_amount DOUBLE PRECISION NOT NULL,
+    new_amount DOUBLE PRECISION,
+    original_date_text TEXT NOT NULL,
+    new_date_text TEXT,
+    status TEXT DEFAULT 'Pending',
+    timestamp BIGINT NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- =========================================================================
+-- 5. Enable Row-Level Security (RLS) on all tables
+-- =========================================================================
+ALTER TABLE public.members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.savings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.change_requests ENABLE ROW LEVEL SECURITY;
+
+-- =========================================================================
+-- 6. Define Security Policies using auth.uid()
+-- =========================================================================
+
+-- Members Table Policies
+CREATE POLICY "Allow read for all authenticated users" ON public.members
+    FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Allow insert/update for own profile" ON public.members
+    FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Admins can update all members" ON public.members
+    FOR UPDATE TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );
+
+CREATE POLICY "Admins can delete all members" ON public.members
+    FOR DELETE TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );
+
+-- Savings Table Policies
+CREATE POLICY "Allow read for all authenticated users" ON public.savings
+    FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Users can manage own savings, Admins can manage all" ON public.savings
+    FOR ALL TO authenticated USING (
+        user_id = auth.uid() OR 
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    ) WITH CHECK (
+        user_id = auth.uid() OR 
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );
+
+-- App Settings Policies
+CREATE POLICY "Users can manage own settings" ON public.app_settings
+    FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
+-- Change Requests Policies
+CREATE POLICY "Users can read own change requests, Admins can read all" ON public.change_requests
+    FOR SELECT TO authenticated USING (
+        user_id = auth.uid() OR 
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );
+
+CREATE POLICY "Users can create own change requests, Admins can manage all" ON public.change_requests
+    FOR ALL TO authenticated USING (
+        user_id = auth.uid() OR 
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    ) WITH CHECK (
+        user_id = auth.uid() OR 
+        EXISTS (
+            SELECT 1 FROM public.members 
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );
+
+-- ====================================================================
+-- RLS Policy for avatar Storage Bucket
+-- ====================================================================
+-- 1. Policy for SELECT (Allows anyone to view any profile picture in the avatars bucket)
+CREATE POLICY "Allow public read access to avatars"
+ON storage.objects FOR SELECT
+USING ( bucket_id = 'avatars' );
+
+-- 2. Policy for INSERT (Allows logged-in users to upload only their own avatar files)
+CREATE POLICY "Allow authenticated users to upload their own avatars"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'avatars' 
+  AND name LIKE 'avatar_' || regexp_replace(auth.jwt() ->> 'email', '[^a-zA-Z0-9]', '_', 'g') || '%'
+);
+
+-- 3. Policy for UPDATE (Allows logged-in users to update only their own avatar files)
+CREATE POLICY "Allow authenticated users to update their own avatars"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'avatars' 
+  AND name LIKE 'avatar_' || regexp_replace(auth.jwt() ->> 'email', '[^a-zA-Z0-9]', '_', 'g') || '%'
+)
+WITH CHECK (
+  bucket_id = 'avatars' 
+  AND name LIKE 'avatar_' || regexp_replace(auth.jwt() ->> 'email', '[^a-zA-Z0-9]', '_', 'g') || '%'
+);
+
+-- 4. Policy for DELETE (Allows logged-in users to delete only their own avatar files)
+CREATE POLICY "Allow authenticated users to delete their own avatars"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'avatars' 
+  AND name LIKE 'avatar_' || regexp_replace(auth.jwt() ->> 'email', '[^a-zA-Z0-9]', '_', 'g') || '%'
+);
+
+-- ===============================================================================
+-- For soft delete mechanism to work (Version: 0.0.48)
+-- ===============================================================================
+ALTER TABLE public.savings ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;
+ALTER TABLE public.savings ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_savings_deleted ON public.savings(deleted);
+
+CREATE POLICY "Admins can delete all members" ON public.members
+    FOR DELETE TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.members
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );
+
+-- ===============================================================================
+-- Phase 4.4 fix: stable client-generated UUID match key for savings (Version: 0.0.49)
+-- ===============================================================================
+ALTER TABLE savings ADD COLUMN IF NOT EXISTS sync_key TEXT;
+UPDATE savings SET sync_key = gen_random_uuid()::text WHERE sync_key IS NULL OR sync_key = '';
+ALTER TABLE savings ALTER COLUMN sync_key SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE savings ALTER COLUMN sync_key SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_savings_sync_key ON savings (sync_key);
+
+-- ===============================================================================
+-- Add mobile_no column to app_settings table (Version: 0.0.60)
+-- ===============================================================================
+ALTER TABLE app_settings ADD COLUMN mobile_no TEXT NOT NULL DEFAULT '';
+
+-- ===============================================================================
+-- 
+-- ===============================================================================
+-- ===============================================================================
+-- Add mobile_no column to members table so admins can Call/Message members (Version: 0.0.63)
+-- ===============================================================================
+ALTER TABLE members ADD COLUMN IF NOT EXISTS mobile_no TEXT NOT NULL DEFAULT '';
