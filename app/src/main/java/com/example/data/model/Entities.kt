@@ -49,6 +49,8 @@ data class AppSettings(
     val personalGoal: Double = 500.0,
     val profileName: String = "John Doe",
     val membershipNo: String = "",
+    // Comment: Member's mobile number stored with country code prefix (e.g. +8801XXXXXXXXX), synced to the app_settings.mobile_no column
+    val mobileNo: String = "",
     val isDarkMode: Boolean = false,
     val notificationDay: String = "Thursday",
     val notificationTime: String = "09:00",

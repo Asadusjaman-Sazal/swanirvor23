@@ -71,6 +71,8 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
     var savingsGoalText by remember { mutableStateOf(appSettings.personalGoal.toInt().toString()) }
     var profileNameText by remember { mutableStateOf(appSettings.profileName) }
     var membershipNoText by remember { mutableStateOf(appSettings.membershipNo) }
+    // Comment: The stored mobile number carries the +880 country code; the input box shows only the digits after the immutable prefix
+    var mobileNoText by remember { mutableStateOf(appSettings.mobileNo.removePrefix("+880")) }
 
     // Comment: Track the single open Settings accordion section (null = all closed); only one can be open at a time
     var settingsOpenSection by remember { mutableStateOf<String?>(null) }
@@ -92,7 +94,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         if (uri != null) {
             val localPath = saveUriToInternalStorage(context, uri)
             if (localPath != null) {
-                viewModel.updateProfileInfo(profileNameText, membershipNoText, localPath)
+                viewModel.updateProfileInfo(profileNameText, membershipNoText, localPath, mobileNo = mobileNoText)
                 Toast.makeText(context, "Profile picture updated successfully!", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(context, "Failed to save profile picture.", Toast.LENGTH_SHORT).show()
@@ -106,6 +108,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         savingsGoalText = appSettings.personalGoal.toInt().toString()
         profileNameText = appSettings.profileName
         membershipNoText = appSettings.membershipNo
+        mobileNoText = appSettings.mobileNo.removePrefix("+880")
         // Comment: Synchronize automated notification states with remote app settings
         notificationsEnabled = appSettings.enableNotifications
         notificationDay = appSettings.notificationDay
@@ -421,7 +424,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                                     // Comment: Clear/Delete button to clear the currently uploaded profile picture, positioned to the right of Choose Image
                                     OutlinedButton(
                                         onClick = {
-                                            viewModel.updateProfileInfo(profileNameText, membershipNoText, null)
+                                            viewModel.updateProfileInfo(profileNameText, membershipNoText, null, mobileNo = mobileNoText)
                                             Toast.makeText(context, "Profile picture cleared!", Toast.LENGTH_SHORT).show()
                                         },
                                         colors = ButtonDefaults.outlinedButtonColors(
@@ -467,7 +470,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                             onClick = {
                                 keyboardController?.hide()
                                 focusManager.clearFocus()
-                                viewModel.updateProfileInfo(profileNameText, membershipNoText)
+                                viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = mobileNoText)
                                 Toast.makeText(context, "Profile name saved successfully!", Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(8.dp),
@@ -502,12 +505,56 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                             onClick = {
                                 keyboardController?.hide()
                                 focusManager.clearFocus()
-                                viewModel.updateProfileInfo(profileNameText, membershipNoText)
+                                viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = mobileNoText)
                                 Toast.makeText(context, "Membership number saved successfully!", Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             modifier = Modifier.testTag("membership_no_save_button")
+                        ) {
+                            Text("Save")
+                        }
+                    }
+                }
+
+                // Mobile No. row layout with immutable +880 prefix and save button to the right
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "Mobile No.", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = mobileNoText,
+                            onValueChange = {
+                                // Comment: Keep only digits, drop a pasted leading 880 country code so it is not doubled,
+                                // and cap at 10 digits so the full number with the +880 prefix never exceeds 14 characters
+                                mobileNoText = it.filter(Char::isDigit).let { digits ->
+                                    val cleaned = if (digits.startsWith("880") && digits.length > 10) digits.removePrefix("880") else digits
+                                    cleaned.take(10)
+                                }
+                            },
+                            prefix = { Text("+880", fontWeight = FontWeight.Bold) },
+                            placeholder = { Text("1XXXXXXXXX") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("mobile_no_input"),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        Button(
+                            onClick = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                                // Comment: Store the full number including the immutable +880 country code prefix
+                                val fullMobileNo = if (mobileNoText.isBlank()) "" else "+880$mobileNoText"
+                                viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = fullMobileNo)
+                                Toast.makeText(context, "Mobile number saved successfully!", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            modifier = Modifier.testTag("mobile_no_save_button")
                         ) {
                             Text("Save")
                         }

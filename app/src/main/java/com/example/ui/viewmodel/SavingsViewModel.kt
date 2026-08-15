@@ -317,7 +317,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Update settings: Profile details
-    fun updateProfileInfo(name: String, membershipNo: String, profileImageUrl: String? = null) {
+    fun updateProfileInfo(name: String, membershipNo: String, profileImageUrl: String? = null, mobileNo: String = "") {
         viewModelScope.launch {
             val current = repository.getSettingsDirect() ?: AppSettings()
             val member = repository.getMemberById(currentUserMemberId)
@@ -348,7 +348,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
-            repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img))
+            repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img, mobileNo = mobileNo))
             // Also update current user member name, avatarUrl, and membershipNo in the database
             if (member != null) {
                 repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo))
@@ -897,7 +897,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Comment: Register a new member inside Supabase and the Room database securely
-    fun signUp(name: String, email: String, password: String, membershipNo: String, onResult: (Boolean, String) -> Unit) {
+    fun signUp(name: String, email: String, password: String, membershipNo: String, mobileNo: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             if (name.isBlank() || email.isBlank() || password.isBlank()) {
                 onResult(false, "Please fill in all required fields (Name, Email, Password).")
@@ -955,6 +955,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             // Comment: Do NOT auto-login after a successful signUp as per instructions.
             // Return success so the AuthScreen can redirect the user to the Sign In page and keep the pre-filled email.
             if (localMemberId != null) {
+                // Comment: Persist the mobile number entered during sign up into app_settings so it syncs
+                // to the Supabase app_settings.mobile_no column (pushed when a session exists, synced later otherwise)
+                try {
+                    val settings = repository.getSettingsDirect() ?: AppSettings()
+                    val fullMobileNo = if (mobileNo.isBlank()) "" else "+880${mobileNo.filter(Char::isDigit)}"
+                    repository.updateSettings(settings.copy(mobileNo = fullMobileNo))
+                } catch (e: Exception) {
+                    android.util.Log.e("SavingsViewModel", "Failed to save mobile number during signup", e)
+                }
                 onResult(true, "Account registered successfully via Supabase!")
             } else {
                 onResult(false, "Failed to register local member profile.")

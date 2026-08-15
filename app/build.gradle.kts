@@ -41,6 +41,27 @@ fun getParsedVersionCode(): Int {
     return 1
 }
 
+// Comment: Read a signing secret from an environment variable first, then from the .env file
+// (the project's convention for local secrets, also consumed by the Secrets Gradle Plugin below).
+fun getSecret(name: String): String {
+    val fromEnv = System.getenv(name)?.takeIf { it.isNotBlank() }
+    if (fromEnv != null) {
+        return fromEnv
+    }
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+        var value = ""
+        envFile.forEachLine { line ->
+            val trimmed = line.trim()
+            if (value.isEmpty() && trimmed.startsWith("$name=")) {
+                value = trimmed.substringAfter('=').trim().removeSurrounding("\"")
+            }
+        }
+        return value
+    }
+    return ""
+}
+
 android {
     namespace = "com.example"
     compileSdk = 35
@@ -57,12 +78,14 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+            val keystorePath = getSecret("KEYSTORE_PATH").ifBlank { "${rootDir}/swanirvor-23-release-key.jks" }
             storeFile = file(keystorePath)
-            // Comment: Fall back to empty strings so a missing CI secret fails the signing step cleanly instead of producing a null store password.
-            storePassword = System.getenv("STORE_PASSWORD") ?: ""
-            keyAlias = "upload"
-            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            // Comment: Read signing secrets from an env var or the .env file (the project's secrets
+            // convention); fall back to empty strings so a missing secret fails the signing step
+            // cleanly instead of producing a null store password.
+            storePassword = getSecret("STORE_PASSWORD")
+            keyAlias = getSecret("KEY_ALIAS").ifBlank { "release" }
+            keyPassword = getSecret("KEY_PASSWORD")
         }
         create("debugConfig") {
             storeFile = file("${rootDir}/debug.keystore")
@@ -99,6 +122,12 @@ android {
 secrets {
     propertiesFileName = ".env"
     defaultPropertiesFileName = ".env.example"
+    // Comment: Keep signing-key secrets out of the generated BuildConfig fields so keystore
+    // passwords are never embedded in the distributed APK.
+    ignoreList.add("KEYSTORE_PATH")
+    ignoreList.add("STORE_PASSWORD")
+    ignoreList.add("KEY_PASSWORD")
+    ignoreList.add("KEY_ALIAS")
 }
 
 // Some unused dependencies are commented out below instead of being removed.

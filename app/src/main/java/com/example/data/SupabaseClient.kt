@@ -540,6 +540,7 @@ object SupabaseClient {
             put("personal_goal", settings.personalGoal)
             put("profile_name", settings.profileName)
             put("membership_no", settings.membershipNo)
+            put("mobile_no", settings.mobileNo)
             put("is_dark_mode", settings.isDarkMode)
             put("notification_day", settings.notificationDay)
             put("notification_time", settings.notificationTime)
@@ -556,6 +557,7 @@ object SupabaseClient {
             personalGoal = json.optDouble("personal_goal", 500.0),
             profileName = json.optString("profile_name", "John Doe"),
             membershipNo = json.optString("membership_no", ""),
+            mobileNo = json.optString("mobile_no", ""),
             isDarkMode = json.optBoolean("is_dark_mode", false),
             notificationDay = json.optString("notification_day", "Thursday"),
             notificationTime = json.optString("notification_time", "09:00"),

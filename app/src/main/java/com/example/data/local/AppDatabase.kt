@@ -15,7 +15,7 @@ import com.example.data.model.ChangeRequest
  * Room Database holder for the Swanirvor-23 application.
  * Manages tables for members, individual savings contributions, and app settings.
  */
-@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class], version = 8, exportSchema = false)
+@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class], version = 9, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun memberDao(): MemberDao
     abstract fun savingsDao(): SavingsDao
@@ -36,7 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lexsave_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .build()
                 INSTANCE = instance
                 instance
@@ -63,6 +63,14 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `savings` ADD COLUMN `syncKey` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        // Comment: Migrate Room database from version 8 to 9 by adding the mobile number column to app_settings
+        // for the new Settings > Profile Information > Mobile No. field. Existing rows start empty.
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `app_settings` ADD COLUMN `mobileNo` TEXT NOT NULL DEFAULT ''")
             }
         }
     }
