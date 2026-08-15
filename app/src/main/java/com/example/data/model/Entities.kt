@@ -18,10 +18,10 @@ data class Member(
     val status: String = "Active", // "Active" or "Suspended"
     // Comment: Field to track if an admin has sent a targeted notification reminder to this specific member
     val receivedAdminNotification: Boolean = false,
-    // Comment: Store member's password for secure login, default is "password" for seeded members
-    val password: String = "password",
     // Comment: Store member's custom membership number assigned upon signup or registration
-    val membershipNo: String = ""
+    val membershipNo: String = "",
+    // Comment: Member's mobile number (with +880 country code) stored on the shared members row so admins can call/message; synced to the members.mobile_no column
+    val mobileNo: String = ""
 )
 
 /**
@@ -35,7 +35,9 @@ data class Savings(
     val memberName: String,
     val amount: Double,
     val dateText: String, // e.g., "Oct 17, 2023"
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    // Comment: Stable client-generated UUID used to match local and remote savings rows across two independent numeric ID sequences
+    val syncKey: String = ""
 )
 
 /**
@@ -49,6 +51,8 @@ data class AppSettings(
     val personalGoal: Double = 500.0,
     val profileName: String = "John Doe",
     val membershipNo: String = "",
+    // Comment: Member's mobile number stored with country code prefix (e.g. +8801XXXXXXXXX), synced to the app_settings.mobile_no column
+    val mobileNo: String = "",
     val isDarkMode: Boolean = false,
     val notificationDay: String = "Thursday",
     val notificationTime: String = "09:00",

@@ -54,6 +54,8 @@ fun AuthScreen(viewModel: SavingsViewModel) {
     var nameInput by remember { mutableStateOf("") }
     // Comment: Store the user's membership number during the Sign Up process
     var membershipNoInput by remember { mutableStateOf("") }
+    // Comment: Store the user's mobile number during the Sign Up process (digits only; the +880 prefix is prepended on save)
+    var mobileNoInput by remember { mutableStateOf("") }
     // Comment: Prefill the email field with the last registered/logged-in email address for quick and easy authentication
     var emailInput by remember { mutableStateOf(com.example.data.SupabaseClient.getRegisteredEmail()) }
     var passwordInput by remember { mutableStateOf("") }
@@ -334,6 +336,44 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                         )
                     }
 
+                    // Comment: Form - Mobile No Field (Only shown in Sign Up Mode as requested)
+                    // Matches the Membership No. box styling; the +880 prefix is immutable and only digits are typed
+                    AnimatedVisibility(
+                        visible = !isSignInMode,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        OutlinedTextField(
+                            value = mobileNoInput,
+                            onValueChange = {
+                                // Comment: Keep only digits, drop a pasted leading 880 country code so it is not doubled,
+                                // and cap at 10 digits so the full number with the +880 prefix never exceeds 14 characters
+                                mobileNoInput = it.filter(Char::isDigit).let { digits ->
+                                    val cleaned = if (digits.startsWith("880") && digits.length > 10) digits.removePrefix("880") else digits
+                                    cleaned.take(10)
+                                }
+                            },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Mobile No Icon", tint = goldAccent) },
+                            prefix = { Text("+880", fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.7f)) },
+                            placeholder = { Text("1XXXXXXXXX", color = Color.White.copy(alpha = 0.4f)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color(0xFF0B1624),
+                                unfocusedContainerColor = Color(0xFF0B1624),
+                                focusedBorderColor = goldAccent,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                                .testTag("mobile_no_input")
+                        )
+                    }
+
                     // Form - Email Field
                     OutlinedTextField(
                         value = emailInput,
@@ -452,7 +492,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 }
                             } else {
-                                viewModel.signUp(nameInput, emailInput, passwordInput, membershipNoInput) { success, msg ->
+                                viewModel.signUp(nameInput, emailInput, passwordInput, membershipNoInput, mobileNoInput) { success, msg ->
                                     isLoading = false
                                     if (!success) {
                                         authErrorMessage = msg
@@ -545,7 +585,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                             if (!googleLoginLoading && !isLoading) {
                                 // Comment: Force Google Account Chooser screen (prompt select_account) so user can choose or add another Gmail account
                                 // We use percent-encoded brackets (%5B and %5D) so Android Uri.parse and Chrome do not strip or corrupt the queryParams[prompt] parameter
-                                val url = "https://ykbwzodadijtiizobehk.supabase.co/auth/v1/authorize?provider=google&redirect_to=swanirvor23://login-callback&queryParams%5Bprompt%5D=select_account&query_params%5Bprompt%5D=select_account"
+                                val url = "${com.example.BuildConfig.SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=swanirvor23://login-callback&queryParams%5Bprompt%5D=select_account&query_params%5Bprompt%5D=select_account"
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
                                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }

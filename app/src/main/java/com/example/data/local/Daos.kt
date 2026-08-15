@@ -32,6 +32,13 @@ interface MemberDao {
 
     @Delete
     suspend fun deleteMember(member: Member)
+
+    // Comment: Atomically swap a locally-inserted member (local auto-increment ID) for the remote row (SERIAL ID) so a crash cannot leave a missing row
+    @Transaction
+    suspend fun replaceMemberWithRemote(old: Member, new: Member) {
+        deleteMember(old)
+        insertMember(new)
+    }
 }
 
 /**
@@ -48,6 +55,9 @@ interface SavingsDao {
     @Query("SELECT * FROM savings WHERE memberId = :memberId")
     suspend fun getSavingsForMemberDirect(memberId: Int): List<Savings>
 
+    @Query("SELECT * FROM savings WHERE id = :id")
+    suspend fun getSavingsById(id: Int): Savings?
+
     // Comment: Fetch all local savings records directly for bidirectional sync
     @Query("SELECT * FROM savings ORDER BY timestamp DESC")
     suspend fun getAllSavingsDirect(): List<Savings>
@@ -60,6 +70,13 @@ interface SavingsDao {
 
     @Delete
     suspend fun deleteSavings(savings: Savings)
+
+    // Comment: Atomically swap a locally-inserted savings row (local auto-increment ID) for the remote row (SERIAL ID) so a crash cannot leave a missing row
+    @Transaction
+    suspend fun replaceSavingsWithRemote(old: Savings, new: Savings) {
+        deleteSavings(old)
+        insertSavings(new)
+    }
 }
 
 /**
@@ -103,4 +120,11 @@ interface ChangeRequestDao {
 
     @Delete
     suspend fun deleteChangeRequest(request: ChangeRequest)
+
+    // Comment: Atomically swap a locally-inserted change request (local auto-increment ID) for the remote row (SERIAL ID) so a crash cannot leave a missing row
+    @Transaction
+    suspend fun replaceChangeRequestWithRemote(old: ChangeRequest, new: ChangeRequest) {
+        deleteChangeRequest(old)
+        insertChangeRequest(new)
+    }
 }

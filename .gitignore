@@ -1,3 +1,4 @@
+--- .gitignore (原始)
 # Gradle files
 .gradle/
 build/
@@ -28,6 +29,10 @@ Thumbs.db
 
 # Optional / Custom database script backup
 supabaseSql.txt
+
++++ .gitignore (修改后)
+```
+ongoing_fixes.txt
 
 #Freebuff files
 .freebuff/

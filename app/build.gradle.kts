@@ -22,6 +22,46 @@ fun getParsedVersionName(): String {
     return "1.0.0"
 }
 
+// Comment: Derive a monotonic versionCode from the same "Current Version" line so version bumps
+// in versionHistory.txt never require a separate manual versionCode edit.
+fun getParsedVersionCode(): Int {
+    val versionFile = rootProject.file("versionHistory.txt")
+    if (versionFile.exists()) {
+        var version = "1.0.0"
+        versionFile.forEachLine { line ->
+            if (line.trim().startsWith("Current Version:")) {
+                version = line.substringAfter("Current Version:").trim()
+            }
+        }
+        val parts = version.split(".").mapNotNull { it.toIntOrNull() }
+        if (parts.size >= 3) {
+            return parts[0] * 10000 + parts[1] * 100 + parts[2]
+        }
+    }
+    return 1
+}
+
+// Comment: Read a signing secret from an environment variable first, then from the .env file
+// (the project's convention for local secrets, also consumed by the Secrets Gradle Plugin below).
+fun getSecret(name: String): String {
+    val fromEnv = System.getenv(name)?.takeIf { it.isNotBlank() }
+    if (fromEnv != null) {
+        return fromEnv
+    }
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+        var value = ""
+        envFile.forEachLine { line ->
+            val trimmed = line.trim()
+            if (value.isEmpty() && trimmed.startsWith("$name=")) {
+                value = trimmed.substringAfter('=').trim().removeSurrounding("\"")
+            }
+        }
+        return value
+    }
+    return ""
+}
+
 android {
     namespace = "com.example"
     compileSdk = 35
@@ -30,7 +70,7 @@ android {
         applicationId = "com.legumsoft.swanirvor23"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
+        versionCode = getParsedVersionCode()
         versionName = getParsedVersionName()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -38,11 +78,14 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+            val keystorePath = getSecret("KEYSTORE_PATH").ifBlank { "${rootDir}/swanirvor-23-release-key.jks" }
             storeFile = file(keystorePath)
-            storePassword = System.getenv("STORE_PASSWORD")
-            keyAlias = "upload"
-            keyPassword = System.getenv("KEY_PASSWORD")
+            // Comment: Read signing secrets from an env var or the .env file (the project's secrets
+            // convention); fall back to empty strings so a missing secret fails the signing step
+            // cleanly instead of producing a null store password.
+            storePassword = getSecret("STORE_PASSWORD")
+            keyAlias = getSecret("KEY_ALIAS").ifBlank { "release" }
+            keyPassword = getSecret("KEY_PASSWORD")
         }
         create("debugConfig") {
             storeFile = file("${rootDir}/debug.keystore")
@@ -79,13 +122,18 @@ android {
 secrets {
     propertiesFileName = ".env"
     defaultPropertiesFileName = ".env.example"
+    // Comment: Keep signing-key secrets out of the generated BuildConfig fields so keystore
+    // passwords are never embedded in the distributed APK.
+    ignoreList.add("KEYSTORE_PATH")
+    ignoreList.add("STORE_PASSWORD")
+    ignoreList.add("KEY_PASSWORD")
+    ignoreList.add("KEY_ALIAS")
 }
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
-    implementation(platform(libs.firebase.bom))
     // implementation(libs.accompanist.permissions)
     implementation(libs.androidx.activity.compose)
     // implementation(libs.androidx.camera.camera2)
@@ -99,6 +147,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.security.crypto)
     // implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -107,15 +156,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.coil.compose)
-    implementation(libs.converter.moshi)
-    implementation(libs.firebase.ai)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.logging.interceptor)
-    implementation(libs.moshi.kotlin)
     implementation(libs.okhttp)
-    // implementation(libs.play.services.location)
-    implementation(libs.retrofit)
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)
@@ -133,7 +176,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
     "ksp"(libs.androidx.room.compiler)
-    "ksp"(libs.moshi.kotlin.codegen)
 }
 
 // Comment: Configure the Kotlin compiler options dynamically for all compilation tasks

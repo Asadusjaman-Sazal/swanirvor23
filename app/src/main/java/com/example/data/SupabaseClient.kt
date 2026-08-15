@@ -1,6 +1,8 @@
 package com.example.data
 
 import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -15,22 +17,46 @@ import com.example.data.model.ChangeRequest
 
 /**
  * Utility client to connect Swanirvor-23 to Supabase Auth REST API.
- * Uses the exact credentials specified in src/supabaseClient.js:
- * URL: https://ykbwzodadijtiizobehk.supabase.co
- * Key: sb_publishable_0TnekhtKdN_MUcTiZ66sZA_qGjqqFyh
+ * Credentials are injected at build time from the local .env file via the Secrets Gradle Plugin (see BuildConfig).
  */
 object SupabaseClient {
-    private const val SUPABASE_URL = "https://ykbwzodadijtiizobehk.supabase.co"
-    private const val SUPABASE_PUBLIC_KEY = "sb_publishable_0TnekhtKdN_MUcTiZ66sZA_qGjqqFyh"
+    // Comment: Read the Supabase project URL and publishable/anon key from BuildConfig (populated from .env by the Secrets Gradle Plugin)
+    private val SUPABASE_URL = com.example.BuildConfig.SUPABASE_URL
+    private val SUPABASE_PUBLIC_KEY = com.example.BuildConfig.SUPABASE_ANON_KEY
 
-    private val client = OkHttpClient()
+    // Comment: Bound connect/read/write times so a stalled Supabase request cannot hang a sync or auth call indefinitely
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private var sharedPreferences: android.content.SharedPreferences? = null
 
-    // Comment: Initialize the shared preferences session store with application context
+    // Comment: Initialize an encrypted shared preferences session store so access/refresh tokens are protected at rest.
+    // The encrypted store uses a new file name and the legacy plaintext prefs file is deleted so old tokens do not linger on disk.
     fun init(context: android.content.Context) {
-        sharedPreferences = context.applicationContext.getSharedPreferences("SupabaseAuthPrefs", android.content.Context.MODE_PRIVATE)
+        val appContext = context.applicationContext
+        try {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            sharedPreferences = EncryptedSharedPreferences.create(
+                appContext,
+                "SupabaseAuthEncryptedPrefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+            // Comment: Remove the legacy plaintext prefs file (if present) so previously stored plaintext tokens are not left on disk
+            appContext.deleteSharedPreferences("SupabaseAuthPrefs")
+        } catch (e: Exception) {
+            // Comment: Fall back to plain preferences only if keystore/encryption setup fails, so the app can still start
+            Log.e("SupabaseAuth", "Failed to initialize encrypted preferences, falling back to plain preferences", e)
+            sharedPreferences = appContext.getSharedPreferences("SupabaseAuthPrefs", android.content.Context.MODE_PRIVATE)
+        }
     }
 
     // Comment: Save the active Supabase session JSON string
@@ -56,6 +82,78 @@ object SupabaseClient {
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    // Comment: Report whether the active session's access token expires within the next 5 minutes,
+    // so callers can refresh it before making authenticated requests.
+    fun isSessionExpiringSoon(): Boolean {
+        val sessionStr = getSession() ?: return true
+        return try {
+            val json = JSONObject(sessionStr)
+            val expiresAt = json.optLong("expires_at", 0L)
+            if (expiresAt > 0L) {
+                val timeUntilExpiry = expiresAt - System.currentTimeMillis()
+                timeUntilExpiry < 5 * 60 * 1000 // Less than 5 minutes
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    // Comment: Extract the refresh token from the active Supabase session
+    fun getRefreshToken(): String? {
+        val sessionStr = getSession() ?: return null
+        return try {
+            val json = JSONObject(sessionStr)
+            json.optString("refresh_token")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Comment: Exchange the stored refresh token for a fresh session via POST /auth/v1/token,
+    // saving the new session JSON on success or clearing the session when the refresh is rejected.
+    suspend fun refreshAccessToken(): SupabaseAuthResult = withContext(Dispatchers.IO) {
+        val refreshToken = getRefreshToken()
+        if (refreshToken.isNullOrBlank()) {
+            return@withContext SupabaseAuthResult(false, "No refresh token available. Please log in again.")
+        }
+
+        val url = "$SUPABASE_URL/auth/v1/token?grant_type=refresh_token"
+        val jsonBody = JSONObject().apply {
+            put("refresh_token", refreshToken)
+        }.toString()
+
+        val request = Request.Builder()
+            .url(url)
+            .post(jsonBody.toRequestBody(jsonMediaType))
+            .addHeader("apikey", SUPABASE_PUBLIC_KEY)
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                Log.d("SupabaseAuth", "Token Refresh Response Code: ${response.code}")
+                if (response.isSuccessful) {
+                    val jsonResponse = JSONObject(bodyStr)
+                    // Comment: Ensure expires_at is present so future expiry checks work even if the API omitted it
+                    if (!jsonResponse.has("expires_at")) {
+                        val expiresIn = jsonResponse.optLong("expires_in", 3600L)
+                        jsonResponse.put("expires_at", System.currentTimeMillis() + expiresIn * 1000)
+                    }
+                    saveSession(jsonResponse.toString())
+                    SupabaseAuthResult(true, "Token refreshed successfully", sessionExists = true)
+                } else {
+                    clearSession()
+                    SupabaseAuthResult(false, "Failed to refresh token. Please log in again.", sessionExists = false)
+                }
+            }
+        } catch (e: Exception) {
+            SupabaseAuthResult(false, "Network error: ${e.localizedMessage}", sessionExists = false)
         }
     }
 
@@ -109,7 +207,7 @@ object SupabaseClient {
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                Log.d("SupabaseAuth", "SignUp Response Code: ${response.code}, Body: $bodyStr")
+                Log.d("SupabaseAuth", "SignUp Response Code: ${response.code}")
                 if (response.isSuccessful) {
                     val jsonResponse = JSONObject(bodyStr)
                     val userObj = jsonResponse.optJSONObject("user")
@@ -157,7 +255,7 @@ object SupabaseClient {
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                Log.d("SupabaseAuth", "SignIn Response Code: ${response.code}, Body: $bodyStr")
+                Log.d("SupabaseAuth", "SignIn Response Code: ${response.code}")
                 if (response.isSuccessful) {
                     val jsonResponse = JSONObject(bodyStr)
                     val userObj = jsonResponse.optJSONObject("user")
@@ -201,7 +299,7 @@ object SupabaseClient {
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                Log.d("SupabaseAuth", "FetchUser Response Code: ${response.code}, Body: $bodyStr")
+                Log.d("SupabaseAuth", "FetchUser Response Code: ${response.code}")
                 if (response.isSuccessful) {
                     val userObj = JSONObject(bodyStr)
                     val userEmail = userObj.optString("email") ?: ""
@@ -211,6 +309,8 @@ object SupabaseClient {
                         put("access_token", accessToken)
                         put("refresh_token", refreshToken)
                         put("expires_in", expiresIn.toIntOrNull() ?: 3600)
+                        // Comment: Store the absolute expiry time so token-refresh checks work for Google OAuth sessions too
+                        put("expires_at", System.currentTimeMillis() + (expiresIn.toIntOrNull() ?: 3600) * 1000L)
                         put("token_type", tokenType)
                         put("user", userObj)
                     }
@@ -247,7 +347,7 @@ object SupabaseClient {
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                Log.d("SupabaseAuth", "Recover Response Code: ${response.code}, Body: $bodyStr")
+                Log.d("SupabaseAuth", "Recover Response Code: ${response.code}")
                 if (response.isSuccessful) {
                     SupabaseAuthResult(true, "Password reset email sent successfully! Please check your inbox.")
                 } else {
@@ -286,7 +386,7 @@ object SupabaseClient {
         try {
             client.newCall(request).execute().use { response ->
                 val bodyStr = response.body?.string() ?: ""
-                Log.d("SupabaseAuth", "Update Password Response Code: ${response.code}, Body: $bodyStr")
+                Log.d("SupabaseAuth", "Update Password Response Code: ${response.code}")
                 if (response.isSuccessful) {
                     SupabaseAuthResult(true, "Password updated successfully!")
                 } else {
@@ -341,7 +441,8 @@ object SupabaseClient {
         method: String,
         table: String,
         query: String = "",
-        bodyJson: String? = null
+        bodyJson: String? = null,
+        prefer: String = "return=representation"
     ): String? = withContext(Dispatchers.IO) {
         val token = getAccessToken() ?: SUPABASE_PUBLIC_KEY
         val url = if (query.isNotEmpty()) "$SUPABASE_URL/rest/v1/$table?$query" else "$SUPABASE_URL/rest/v1/$table"
@@ -350,7 +451,7 @@ object SupabaseClient {
             .url(url)
             .addHeader("apikey", SUPABASE_PUBLIC_KEY)
             .addHeader("Authorization", "Bearer $token")
-            .addHeader("Prefer", "return=representation")
+            .addHeader("Prefer", prefer)
 
         when (method.uppercase()) {
             "GET" -> builder.get()
@@ -362,7 +463,7 @@ object SupabaseClient {
         try {
             client.newCall(builder.build()).execute().use { response ->
                 val responseStr = response.body?.string()
-                Log.d("SupabaseDb", "Request $method $table $query Response Code: ${response.code}, Body: $responseStr")
+                Log.d("SupabaseDb", "Request $method $table $query Response Code: ${response.code}")
                 if (response.isSuccessful) {
                     responseStr
                 } else {
@@ -386,8 +487,8 @@ object SupabaseClient {
             put("role", member.role)
             put("status", member.status)
             put("received_admin_notification", member.receivedAdminNotification)
-            put("password", member.password)
             put("membership_no", member.membershipNo)
+            put("mobile_no", member.mobileNo)
         }
     }
 
@@ -402,8 +503,8 @@ object SupabaseClient {
             role = json.optString("role", "Member"),
             status = json.optString("status", "Active"),
             receivedAdminNotification = json.optBoolean("received_admin_notification", false),
-            password = json.optString("password", "password"),
-            membershipNo = json.optString("membership_no", "")
+            membershipNo = json.optString("membership_no", ""),
+            mobileNo = json.optString("mobile_no", "")
         )
     }
 
@@ -416,6 +517,8 @@ object SupabaseClient {
             put("amount", savings.amount)
             put("date_text", savings.dateText)
             put("timestamp", savings.timestamp)
+            // Comment: Only send the match key when one is set so legacy partial updates never blank an existing remote key
+            if (savings.syncKey.isNotBlank()) put("sync_key", savings.syncKey)
         }
     }
 
@@ -427,7 +530,8 @@ object SupabaseClient {
             memberName = json.optString("member_name", ""),
             amount = json.optDouble("amount", 0.0),
             dateText = json.optString("date_text", ""),
-            timestamp = json.optLong("timestamp", 0L)
+            timestamp = json.optLong("timestamp", 0L),
+            syncKey = json.optString("sync_key", "")
         )
     }
 
@@ -438,6 +542,7 @@ object SupabaseClient {
             put("personal_goal", settings.personalGoal)
             put("profile_name", settings.profileName)
             put("membership_no", settings.membershipNo)
+            put("mobile_no", settings.mobileNo)
             put("is_dark_mode", settings.isDarkMode)
             put("notification_day", settings.notificationDay)
             put("notification_time", settings.notificationTime)
@@ -454,6 +559,7 @@ object SupabaseClient {
             personalGoal = json.optDouble("personal_goal", 500.0),
             profileName = json.optString("profile_name", "John Doe"),
             membershipNo = json.optString("membership_no", ""),
+            mobileNo = json.optString("mobile_no", ""),
             isDarkMode = json.optBoolean("is_dark_mode", false),
             notificationDay = json.optString("notification_day", "Thursday"),
             notificationTime = json.optString("notification_time", "09:00"),
@@ -542,7 +648,7 @@ object SupabaseClient {
         try {
             client.newCall(request).execute().use { response ->
                 val responseStr = response.body?.string()
-                Log.d("SupabaseStorage", "Upload avatar response code: ${response.code}, Body: $responseStr")
+                Log.d("SupabaseStorage", "Upload avatar response code: ${response.code}")
                 if (response.isSuccessful) {
                     "$SUPABASE_URL/storage/v1/object/public/avatars/$fileName"
                 } else {
@@ -564,21 +670,26 @@ object SupabaseClient {
             put("avatar_url", member.avatarUrl ?: JSONObject.NULL)
             put("total_savings", member.totalSavings)
             put("membership_no", member.membershipNo)
+            put("mobile_no", member.mobileNo)
             put("received_admin_notification", member.receivedAdminNotification)
         }
-        val jsonStr = performRequest("PATCH", "members", "email=eq.${member.email}", bodyObj.toString())
+        // Comment: URL-encode the email so values with reserved characters (+ , space) do not break the filter
+        val encodedEmail = java.net.URLEncoder.encode(member.email, "UTF-8")
+        val jsonStr = performRequest("PATCH", "members", "email=eq.$encodedEmail", bodyObj.toString())
         return jsonStr != null
     }
 
     // Comment: Delete an existing Member row from remote database table
     suspend fun dbDeleteMember(member: Member): Boolean {
-        val jsonStr = performRequest("DELETE", "members", "email=eq.${member.email}")
+        // Comment: URL-encode the email so values with reserved characters (+ , space) do not break the filter
+        val encodedEmail = java.net.URLEncoder.encode(member.email, "UTF-8")
+        val jsonStr = performRequest("DELETE", "members", "email=eq.$encodedEmail")
         return jsonStr != null
     }
 
-    // Comment: Fetch all Savings contributions from remote database table
+    // Comment: Fetch all active (non-soft-deleted) Savings contributions from remote database table
     suspend fun dbFetchSavings(): List<Savings> {
-        val jsonStr = performRequest("GET", "savings", "select=*") ?: return emptyList()
+        val jsonStr = performRequest("GET", "savings", "select=*&deleted=eq.false") ?: return emptyList()
         val list = mutableListOf<Savings>()
         try {
             val arr = org.json.JSONArray(jsonStr)
@@ -589,6 +700,38 @@ object SupabaseClient {
             Log.e("SupabaseDb", "Error parsing savings response", e)
         }
         return list
+    }
+
+    // Comment: Fetch the IDs of remotely soft-deleted savings so local copies of those rows can be removed instead of re-pushed
+    suspend fun dbFetchDeletedSavingsIds(): Set<Int> {
+        val jsonStr = performRequest("GET", "savings", "select=id&deleted=eq.true") ?: return emptySet()
+        val ids = mutableSetOf<Int>()
+        try {
+            val arr = org.json.JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val id = arr.getJSONObject(i).optInt("id", 0)
+                if (id > 0) ids.add(id)
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseDb", "Error parsing deleted savings ids", e)
+        }
+        return ids
+    }
+
+    // Comment: Fetch the sync keys of remotely soft-deleted savings so local rows can be matched by their stable key
+    suspend fun dbFetchDeletedSavingsKeys(): Set<String> {
+        val jsonStr = performRequest("GET", "savings", "select=sync_key&deleted=eq.true") ?: return emptySet()
+        val keys = mutableSetOf<String>()
+        try {
+            val arr = org.json.JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val key = arr.getJSONObject(i).optString("sync_key", "")
+                if (key.isNotBlank()) keys.add(key)
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseDb", "Error parsing deleted savings sync keys", e)
+        }
+        return keys
     }
 
     // Comment: Create a new Savings contribution row inside remote database table
@@ -603,16 +746,51 @@ object SupabaseClient {
         }
     }
 
-    // Comment: Update an existing Savings contribution row in remote database table
-    suspend fun dbUpdateSavings(savings: Savings): Boolean {
+    // Comment: Upsert a Savings row keyed by its stable sync_key so the same logical entry
+    // is never duplicated across two independent numeric ID sequences
+    suspend fun dbUpsertSavings(savings: Savings): Savings? {
         val body = savingsToJson(savings, includeId = false).toString()
-        val jsonStr = performRequest("PATCH", "savings", "id=eq.${savings.id}", body)
+        val jsonStr = performRequest(
+            "POST",
+            "savings",
+            "on_conflict=sync_key",
+            body,
+            "resolution=merge-duplicates,return=representation"
+        ) ?: return null
+        return try {
+            val arr = org.json.JSONArray(jsonStr)
+            if (arr.length() > 0) jsonToSavings(arr.getJSONObject(0)) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Comment: Assign a sync key to a legacy remote savings row that predates the sync_key column
+    suspend fun dbPatchSavingsSyncKey(id: Int, syncKey: String): Boolean {
+        val jsonBody = """{"sync_key":"$syncKey"}"""
+        val jsonStr = performRequest("PATCH", "savings", "id=eq.$id", jsonBody)
         return jsonStr != null
     }
 
-    // Comment: Delete an existing Savings contribution row from remote database table
+    // Comment: Update an existing Savings contribution row in remote database table,
+    // targeting by its stable sync_key when available and falling back to the numeric id for legacy rows
+    suspend fun dbUpdateSavings(savings: Savings): Boolean {
+        val body = savingsToJson(savings, includeId = false).toString()
+        val filter = if (savings.syncKey.isNotBlank()) "sync_key=eq.${savings.syncKey}" else "id=eq.${savings.id}"
+        val jsonStr = performRequest("PATCH", "savings", filter, body)
+        return jsonStr != null
+    }
+
+    // Comment: Soft-delete the remote savings row (PATCH deleted=true) instead of a hard DELETE so the deletion propagates to other devices instead of being resurrected by their next push.
+    // deleted_at is formatted with SimpleDateFormat (not java.time) because minSdk is 24 and java.time is unavailable below API 26 without desugaring.
     suspend fun dbDeleteSavings(savings: Savings): Boolean {
-        val jsonStr = performRequest("DELETE", "savings", "id=eq.${savings.id}")
+        val isoNow = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            .format(java.util.Date())
+        val jsonBody = """{"deleted":true,"deleted_at":"$isoNow"}"""
+        // Comment: Target by sync_key when available so the soft delete still lands when the numeric ids have drifted
+        val filter = if (savings.syncKey.isNotBlank()) "sync_key=eq.${savings.syncKey}" else "id=eq.${savings.id}"
+        val jsonStr = performRequest("PATCH", "savings", filter, jsonBody)
         return jsonStr != null
     }
 

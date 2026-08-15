@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.view.MainScreen
+import com.example.util.Constants
 import com.example.ui.viewmodel.SavingsViewModel
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -48,7 +49,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: SavingsViewModel = viewModel()
             savingsViewModel = viewModel
-            viewModel.startPeriodicSync()
             val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
 
             // Comment: Control the display state of the splash screen
@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
 
     // Comment: Override onResume to force a complete layout and redraw of the window's decor view.
     // This solves the rendering hang on warm relaunch where the Compose UI stays white/blank until touched.
+    // TODO: Investigate the underlying warm-relaunch rendering hang so this force-redraw workaround can be removed.
     override fun onResume() {
         super.onResume()
         try {
@@ -93,12 +94,6 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Failed to force redraw on resume", e)
         }
-        savingsViewModel?.startPeriodicSync()
-    }
-
-    override fun onPause() {
-        super.onPause()
-        savingsViewModel?.stopPeriodicSync()
     }
 
     private fun handleNotificationIntent(intent: android.content.Intent, viewModel: SavingsViewModel) {
@@ -114,14 +109,16 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             val scheme = uri.scheme
             val host = uri.host
-            android.util.Log.i("MainActivity", "Deep Link received! Scheme: $scheme, Host: $host, URI: $uri")
-            if (scheme == "swanirvor23" || scheme == "com.legumsoft.swanirvor23") {
+            // Redact the URI: it carries the access, provider, and refresh tokens.
+            android.util.Log.i("MainActivity", "Deep Link received! Scheme: $scheme, Host: $host")
+            if (scheme == Constants.DEEP_LINK_SCHEME || scheme == "com.legumsoft.swanirvor23") {
                 // Access fragment or query
                 val fragment = uri.fragment
                 val query = uri.query
                 val paramStr = if (!fragment.isNullOrBlank()) fragment else if (!query.isNullOrBlank()) query else null
 
-                android.util.Log.d("MainActivity", "Parsing deep link parameters. Fragment: $fragment, Query: $query")
+                // Log presence flags only: the fragment/query values contain raw auth tokens.
+                android.util.Log.d("MainActivity", "Parsing deep link parameters. Fragment present=${!fragment.isNullOrBlank()}, Query present=${!query.isNullOrBlank()}")
                 if (!paramStr.isNullOrBlank()) {
                     val params = parseFragmentParameters(paramStr)
                     val accessToken = params["access_token"]

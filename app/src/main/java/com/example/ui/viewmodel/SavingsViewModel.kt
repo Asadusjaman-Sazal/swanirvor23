@@ -10,6 +10,8 @@ import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
 import com.example.data.repository.SavingsRepository
 import com.example.ui.notification.AdminNotificationHelper
+import com.example.util.Constants
+import com.example.util.PasswordValidator
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -56,15 +58,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedMemberForContribution = MutableStateFlow<Member?>(null)
     val selectedMemberForContribution: StateFlow<Member?> = _selectedMemberForContribution
 
-    // Admin panel accordion open/close persistent states (Defaulted to false so they are closed by default when the app starts)
-    private val _isAdminContributionOpen = MutableStateFlow(false)
-    val isAdminContributionOpen: StateFlow<Boolean> = _isAdminContributionOpen
-
-    private val _isAdminActiveCycleOpen = MutableStateFlow(false)
-    val isAdminActiveCycleOpen: StateFlow<Boolean> = _isAdminActiveCycleOpen
-
-    private val _isAdminChangeRequestsOpen = MutableStateFlow(false)
-    val isAdminChangeRequestsOpen: StateFlow<Boolean> = _isAdminChangeRequestsOpen
+    // Admin panel accordion open/close state: only one section can be open at a time (null means all closed)
+    private val _adminOpenSection = MutableStateFlow<String?>(null)
+    val adminOpenSection: StateFlow<String?> = _adminOpenSection.asStateFlow()
 
     // Comment: Store state for manual database syncing with Supabase
     private val _isManualSyncing = MutableStateFlow(false)
@@ -80,59 +76,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearPendingNavigation() {
         _pendingNavigationRoute.value = null
-    }
-
-    private var syncJob: kotlinx.coroutines.Job? = null
-
-    fun startPeriodicSync() {
-        if (syncJob != null && syncJob?.isActive == true) return
-        android.util.Log.d("SupabaseSync", "Starting lifecycle-aware foreground periodic sync loop...")
-        syncJob = viewModelScope.launch {
-            // Wait 5 seconds after startup before starting periodic background sync to avoid conflicts with startup logic
-            kotlinx.coroutines.delay(5000)
-            while (true) {
-                val email = com.example.data.SupabaseClient.getSessionEmail()
-                if (!email.isNullOrBlank() && !isManualSyncing.value) {
-                    try {
-                        android.util.Log.d("SupabaseSync", "Periodic active-foreground sync triggering...")
-                        val newlyPulled = repository.syncWithSupabase()
-
-                        // Comment: If any new pending change requests were pulled and the current user is an admin, show them notifications
-                        val currentEmail = com.example.data.SupabaseClient.getSessionEmail()
-                        val isCurrentUserAdmin = if (!currentEmail.isNullOrBlank()) {
-                            repository.getAllMembersDirect().find { it.email.trim().equals(currentEmail.trim(), ignoreCase = true) }?.role == "Admin"
-                        } else false
-
-                        if (isCurrentUserAdmin && newlyPulled.isNotEmpty()) {
-                            for (req in newlyPulled) {
-                                val friendlyChangeType = when (req.requestType) {
-                                    "Edit" -> "edit"
-                                    "Delete" -> "delete"
-                                    "RemoveMember" -> "user removal"
-                                    "MakeAdmin", "RemoveAdmin" -> "role change"
-                                    else -> req.requestType
-                                }
-                                com.example.ui.notification.AdminNotificationHelper.showAdminChangeRequestNotification(
-                                    getApplication(),
-                                    req.memberName,
-                                    friendlyChangeType
-                                )
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("SupabaseSync", "Periodic active-foreground sync skipped/failed: ${e.localizedMessage}")
-                    }
-                }
-                // Wait for 5 seconds before the next sync cycle
-                kotlinx.coroutines.delay(5000)
-            }
-        }
-    }
-
-    fun stopPeriodicSync() {
-        android.util.Log.d("SupabaseSync", "Stopping periodic sync loop (inactive/backgrounded)...")
-        syncJob?.cancel()
-        syncJob = null
     }
 
     init {
@@ -155,6 +98,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
+            // Comment: Schedule the weekly reminder once on startup from the persisted settings (single source of truth)
+            repository.getSettingsDirect()?.let { startupSettings ->
+                com.example.ui.notification.NotificationScheduler.scheduleNotification(getApplication(), startupSettings)
+            }
+
             // Comment: Automatically restore the user's logged-in session on startup if a valid Supabase session is persisted
             val savedEmail = com.example.data.SupabaseClient.getSessionEmail()
             if (!savedEmail.isNullOrBlank()) {
@@ -165,9 +113,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val matchedMember = membersList.find { it.email.trim().equals(savedEmail.trim(), ignoreCase = true) }
                 if (matchedMember != null) {
                     _currentUserId.value = matchedMember.id
-                    // Also update settings profile name and membershipNo for UI matching
+                    // Also update settings profile name, membershipNo, and mobileNo for UI matching
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = matchedMember.name, membershipNo = matchedMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = matchedMember.name, membershipNo = matchedMember.membershipNo, mobileNo = matchedMember.mobileNo))
                 }
             }
         }
@@ -182,7 +130,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         // Comment: Combine allMembers and allSavings to dynamically calculate the up-to-date totalSavings for each member from savings history
         // Includes full de-duplication of duplicate email accounts (such as Asad.msnd) to present a single merged account in UI.
         allMembers = combine(repository.allMembers, repository.allSavings) { members, savingsList ->
-            val filtered = members.filter { it.email.trim().lowercase() !in seedEmails }
+            val filtered = members.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
             val groupedByEmail = filtered.groupBy { it.email.trim().lowercase() }
 
             groupedByEmail.map { (email, memberList) ->
@@ -196,12 +144,12 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         // Comment: Map and filter savings records, routing any savings assigned to duplicate account IDs to the primary representative ID
         allSavings = combine(repository.allSavings, repository.allMembers) { savingsList, members ->
             val seedMemberIds = members
-                .filter { it.email.trim().lowercase() in seedEmails }
+                .filter { it.email.trim().lowercase() in Constants.SEED_EMAILS }
                 .map { it.id }
                 .toSet()
             val filteredSavings = savingsList.filter { it.memberId !in seedMemberIds }
 
-            val remainingMembers = members.filter { it.email.trim().lowercase() !in seedEmails }
+            val remainingMembers = members.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
             val groupedByEmail = remainingMembers.groupBy { it.email.trim().lowercase() }
             val duplicateIdMap = mutableMapOf<Int, Int>()
             for ((email, membersWithEmail) in groupedByEmail) {
@@ -225,7 +173,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val loggedIn = membersList.find { it.id == userId }
                 if (loggedIn != null) {
                     val representative = membersList
-                        .filter { it.email.trim().lowercase() !in seedEmails }
+                        .filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
                         .find { it.email.trim().equals(loggedIn.email.trim(), ignoreCase = true) }
                     representative?.id ?: userId
                 } else {
@@ -264,17 +212,19 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         _selectedMemberForContribution.value = member
     }
 
-    // Toggle states for the persistent admin panel accordions
-    fun setAdminContributionOpen(open: Boolean) {
-        _isAdminContributionOpen.value = open
+    // Comment: Open the given Admin Panel accordion section, closing the previously open one (only one at a time)
+    fun toggleAdminSection(section: String) {
+        _adminOpenSection.value = if (_adminOpenSection.value == section) null else section
     }
 
-    fun setAdminActiveCycleOpen(open: Boolean) {
-        _isAdminActiveCycleOpen.value = open
+    // Comment: Open the given Admin Panel accordion section without toggling (used by deep-link navigation)
+    fun openAdminSection(section: String) {
+        _adminOpenSection.value = section
     }
 
-    fun setAdminChangeRequestsOpen(open: Boolean) {
-        _isAdminChangeRequestsOpen.value = open
+    // Comment: Close all Admin Panel accordion sections (used when the user navigates to another page)
+    fun closeAllAdminSections() {
+        _adminOpenSection.value = null
     }
 
     // Comment: Trigger a manual bidirectional data sync with Supabase tables and update local Room DB cache
@@ -367,7 +317,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Update settings: Profile details
-    fun updateProfileInfo(name: String, membershipNo: String, profileImageUrl: String? = null) {
+    fun updateProfileInfo(name: String, membershipNo: String, profileImageUrl: String? = null, mobileNo: String = "") {
         viewModelScope.launch {
             val current = repository.getSettingsDirect() ?: AppSettings()
             val member = repository.getMemberById(currentUserMemberId)
@@ -398,10 +348,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
-            repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img))
-            // Also update current user member name, avatarUrl, and membershipNo in the database
+            repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img, mobileNo = mobileNo))
+            // Also update current user member name, avatarUrl, membershipNo, and mobileNo in the database
+            // so the shared members row (visible to admins) carries the mobile number for Call/Message actions
             if (member != null) {
-                repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo))
+                repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo, mobileNo = mobileNo))
             }
         }
     }
@@ -422,14 +373,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     ) {
         viewModelScope.launch {
             val current = repository.getSettingsDirect() ?: AppSettings()
-            repository.updateSettings(
-                current.copy(
-                    enableNotifications = enabled,
-                    notificationDay = day,
-                    notificationTime = time,
-                    notificationText = text
-                )
+            val updated = current.copy(
+                enableNotifications = enabled,
+                notificationDay = day,
+                notificationTime = time,
+                notificationText = text
             )
+            repository.updateSettings(updated)
+            // Comment: Schedule (or cancel) the weekly reminder from this single source of truth when notification settings change
+            com.example.ui.notification.NotificationScheduler.scheduleNotification(getApplication(), updated)
         }
     }
 
@@ -692,7 +644,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         return try {
             val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
             val manualMembers = remoteMembers.filter { member ->
-                member.email.trim().lowercase() !in seedEmails
+                member.email.trim().lowercase() !in Constants.SEED_EMAILS
             }
             if (manualMembers.isEmpty()) "Admin" else "Member"
         } catch (e: Exception) {
@@ -708,11 +660,12 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         _showResetPasswordDialog.value = visible
     }
 
-    // Comment: Update password for the currently logged-in user session in both remote Supabase and local databases
+    // Comment: Update the password for the currently logged-in user session in Supabase Auth (never stored locally)
     fun updatePassword(newPassword: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            if (newPassword.isBlank() || newPassword.length < 6) {
-                onResult(false, "Password must be at least 6 characters long.")
+            // Comment: Enforce the minimum password policy through the shared validator (8+ characters with at least one letter and one number)
+            PasswordValidator.validate(newPassword)?.let { error ->
+                onResult(false, error)
                 return@launch
             }
 
@@ -723,16 +676,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            // 2. Update password in our local database and sync if user profile exists
+            // 2. Keep the matched member profile in sync (passwords are managed only by Supabase Auth, never stored locally)
             val currentEmail = com.example.data.SupabaseClient.getSessionEmail()
             var loggedInMember: Member? = null
             if (!currentEmail.isNullOrBlank()) {
                 val membersList = repository.getAllMembersDirect()
                 val matchedMember = membersList.find { it.email.trim().equals(currentEmail.trim(), ignoreCase = true) }
                 if (matchedMember != null) {
-                    val updatedMember = matchedMember.copy(password = newPassword)
-                    repository.updateMember(updatedMember)
-                    loggedInMember = updatedMember
+                    repository.updateMember(matchedMember)
+                    loggedInMember = matchedMember
 
                     // Force complete bidirectional data sync to make sure local/remote updates align
                     try {
@@ -748,7 +700,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 _currentUserId.value = loggedInMember.id
                 try {
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = loggedInMember.name, membershipNo = loggedInMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = loggedInMember.name, membershipNo = loggedInMember.membershipNo, mobileNo = loggedInMember.mobileNo))
                 } catch (e: Exception) {
                     android.util.Log.e("SavingsViewModel", "Failed to update AppSettings after password update", e)
                 }
@@ -823,7 +775,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     val newMember = Member(
                         name = localName,
                         email = email.trim(),
-                        password = "RecoveredSession",
                         role = assignedRole,
                         status = "Active",
                         totalSavings = 0.0,
@@ -915,7 +866,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     val newMember = Member(
                         name = localName,
                         email = email.trim(),
-                        password = password,
                         role = assignedRole,
                         status = "Active",
                         totalSavings = 0.0,
@@ -932,9 +882,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     onResult(false, "Your account is suspended. Please contact Admin.")
                 } else {
                     _currentUserId.value = foundMember.id
-                    // Update profile name and membership number in settings to match logged-in user for visual consistency
+                    // Update profile name, membership number, and mobile number in settings to match logged-in user for visual consistency
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
@@ -948,10 +898,16 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Comment: Register a new member inside Supabase and the Room database securely
-    fun signUp(name: String, email: String, password: String, membershipNo: String, onResult: (Boolean, String) -> Unit) {
+    fun signUp(name: String, email: String, password: String, membershipNo: String, mobileNo: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             if (name.isBlank() || email.isBlank() || password.isBlank()) {
                 onResult(false, "Please fill in all required fields (Name, Email, Password).")
+                return@launch
+            }
+
+            // Comment: Enforce the minimum password policy through the shared validator (8+ characters with at least one letter and one number)
+            PasswordValidator.validate(password)?.let { error ->
+                onResult(false, error)
                 return@launch
             }
 
@@ -971,16 +927,20 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             // Determine the role dynamically based on whether any custom user has already signed up in Supabase
             val assignedRole = determineRoleForNewUser()
 
+            // Comment: Build the full mobile number with country code once so it can be stored on both
+            // the members row (shared, visible to admins) and app_settings (current user only)
+            val fullMobileNo = if (mobileNo.isBlank()) "" else "+880${mobileNo.filter(Char::isDigit)}"
+
             var localMemberId: Int? = null
             if (!alreadyExists) {
                 val newMember = Member(
                     name = name.trim(),
                     email = email.trim(),
-                    password = password,
                     role = assignedRole,
                     status = "Active",
                     totalSavings = 0.0,
-                    membershipNo = membershipNo.trim()
+                    membershipNo = membershipNo.trim(),
+                    mobileNo = fullMobileNo
                 )
                 repository.insertMember(newMember)
                 val updatedList = repository.getAllMembersDirect()
@@ -989,10 +949,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val existingMember = membersList.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
                 if (existingMember != null) {
                     localMemberId = existingMember.id
-                    // Comment: Update the existing local member record's name and membershipNo with the newly registered details
+                    // Comment: Update the existing local member record's name, membershipNo, and mobileNo with the newly registered details
                     val updatedMember = existingMember.copy(
                         name = name.trim(),
-                        membershipNo = membershipNo.trim()
+                        membershipNo = membershipNo.trim(),
+                        mobileNo = fullMobileNo
                     )
                     repository.updateMember(updatedMember)
                 }
@@ -1001,6 +962,14 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             // Comment: Do NOT auto-login after a successful signUp as per instructions.
             // Return success so the AuthScreen can redirect the user to the Sign In page and keep the pre-filled email.
             if (localMemberId != null) {
+                // Comment: Persist the mobile number entered during sign up into app_settings so it syncs
+                // to the Supabase app_settings.mobile_no column (pushed when a session exists, synced later otherwise)
+                try {
+                    val settings = repository.getSettingsDirect() ?: AppSettings()
+                    repository.updateSettings(settings.copy(mobileNo = fullMobileNo))
+                } catch (e: Exception) {
+                    android.util.Log.e("SavingsViewModel", "Failed to save mobile number during signup", e)
+                }
                 onResult(true, "Account registered successfully via Supabase!")
             } else {
                 onResult(false, "Failed to register local member profile.")
@@ -1069,7 +1038,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     val newMember = Member(
                         name = localName,
                         email = email.trim(),
-                        password = "GoogleOAuth",
                         role = assignedRole,
                         status = "Active",
                         totalSavings = 0.0,
@@ -1087,9 +1055,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     _googleLoginError.value = "Your account is suspended. Please contact Admin."
                 } else {
                     _currentUserId.value = foundMember.id
-                    // Update profile name and membership number in settings to match logged-in user for visual consistency
+                    // Update profile name, membership number, and mobile number in settings to match logged-in user for visual consistency
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
@@ -1107,20 +1075,19 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     fun logout() {
         com.example.data.SupabaseClient.clearSession()
         _currentUserId.value = null
+        // Comment: Reset auth-related UI state so a logged-out user cannot see stale login dialogs or errors
+        _googleLoginLoading.value = false
+        _googleLoginError.value = null
+        _showResetPasswordDialog.value = false
     }
 
     companion object {
-        val seedEmails = setOf(
-            "sarah.j@example.com",
-            "m.reyes@example.com",
-            "elena.r@example.com",
-            "d.chen@example.com",
-            "amanda@example.com",
-            "jane.d@example.com",
-            "r.smith@example.com",
-            "ev.lin@example.com",
-            "john.doe@example.com",
-            "test@email.com"
-        )
+        // Comment: Admin Panel accordion section keys (only one section can be open at a time)
+        const val SECTION_CONTRIBUTION = "contribution"
+        const val SECTION_ACTIVE_CYCLE = "activeCycle"
+        const val SECTION_CHANGE_REQUESTS = "changeRequests"
+        const val SECTION_MEMBERS = "members"
+        const val SECTION_REPORTS = "reports"
+
     }
 }

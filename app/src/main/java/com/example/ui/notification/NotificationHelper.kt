@@ -37,20 +37,7 @@ class NotificationReceiver : BroadcastReceiver() {
         // Comment: Handle device boot completed action to reschedule saved alarms
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             Log.d(TAG, "Device booted! Rescheduling weekly contribution reminder notifications...")
-            val pendingResult = goAsync()
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val db = com.example.data.local.AppDatabase.getDatabase(context)
-                    val settings = db.appSettingsDao().getSettingsDirect()
-                    if (settings != null) {
-                        NotificationScheduler.scheduleNotification(context, settings)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error rescheduling on boot", e)
-                } finally {
-                    pendingResult.finish()
-                }
-            }
+            rescheduleNextReminder(context)
             return
         }
 
@@ -106,6 +93,31 @@ class NotificationReceiver : BroadcastReceiver() {
 
         // Post the notification using system notification manager
         notificationManager.notify(1002, notification)
+
+        // Comment: Reschedule the next weekly occurrence now that this reminder has fired, so the weekly
+        // reminder keeps recurring even if the app is not reopened
+        rescheduleNextReminder(context)
+    }
+
+    // Comment: Read the persisted notification settings off the main thread and schedule the next weekly
+    // occurrence. Shared by the boot path and the after-firing path so the weekly alarm chain stays alive.
+    private fun rescheduleNextReminder(context: Context) {
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val settings = com.example.data.local.AppDatabase.getDatabase(context)
+                    .appSettingsDao().getSettingsDirect()
+                if (settings != null) {
+                    NotificationScheduler.scheduleNotification(context, settings)
+                } else {
+                    Log.w(TAG, "No app settings found to reschedule the weekly reminder")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error rescheduling weekly reminder", e)
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 }
 
@@ -147,24 +159,15 @@ object NotificationScheduler {
         Log.d(TAG, "Scheduling alarm for: ${SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.US).format(Date(triggerTime))}")
 
         try {
-            // Schedule the alarm; setAndAllowWhileIdle executes alarm even if the system is in Doze power saving mode
-            alarmManager.setAndAllowWhileIdle(
+            // Comment: Deliberately use an inexact alarm. A weekly contribution reminder does not need
+            // exact delivery, and this avoids the SCHEDULE_EXACT_ALARM permission requirement on Android 12+.
+            alarmManager.set(
                 AlarmManager.RTC_WAKEUP,
                 triggerTime,
                 pendingIntent
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed scheduling with setAndAllowWhileIdle", e)
-            try {
-                // Fallback to standard set in case of any platform permission issues with exact alarms
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
-            } catch (ex: Exception) {
-                Log.e(TAG, "Failed fallback scheduling method", ex)
-            }
+            Log.e(TAG, "Failed scheduling weekly reminder alarm", e)
         }
     }
 
@@ -249,14 +252,18 @@ object AdminNotificationHelper {
                 notificationManager.createNotificationChannel(channel)
             }
 
-            // Comment: Define an intent to open the app on click and pass a deep navigation extra to trigger the correct page routing
+            // Comment: Define an intent that brings the existing task forward and passes a deep navigation
+            // extra for the correct page routing. Avoid FLAG_ACTIVITY_CLEAR_TASK here because it restarts the
+            // whole task (showing the splash screen) instead of routing the admin to the Admin Panel.
             val openIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("navigate_to", "admin_change_requests")
             }
+            // Comment: Use a notification-specific request code so this PendingIntent cannot be clobbered by
+            // the weekly reminder or user-submitted notifications, which would drop the navigate_to extra.
             val pendingIntent = PendingIntent.getActivity(
                 context,
-                0,
+                NOTIFICATION_ID,
                 openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
