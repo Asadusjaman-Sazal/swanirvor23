@@ -28,3 +28,7 @@ Thumbs.db
 
 # Optional / Custom database script backup
 supabaseSql.txt
+
+#Freebuff files
+.freebuff/
+/.freebuff
