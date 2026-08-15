@@ -1,4 +1,4 @@
-Current Version: 0.0.65
+Current Version: 0.0.66
 -----------------------
 
 Version History:
@@ -68,4 +68,5 @@ Version: 0.0.62 - Added a Mobile No. field to the Sign Up page after Membership 
 Version: 0.0.63 - Added Call and Message actions to the Admin Panel > Members Management 3-dot menu, each opening an "Open With" chooser (WhatsApp / Phone for calls, WhatsApp / Message for messages) that launches the selected app using the member's saved mobile number; stored mobileNo on the members row (Room migration 9->10 + Supabase members.mobile_no) so admins can see other members' numbers.
 Version: 0.0.64 - Replaced the generic chat-bubble glyph in the Admin Panel "Open With" chooser with the official WhatsApp brand icon (new ic_whatsapp vector drawable) so the WhatsApp option shows the proper logo.
 Version: 0.0.65 - Fixed the distorted WhatsApp icon in the Admin Panel "Open With" chooser: replaced the solid silhouette (which rendered as an unreadable green blob at 24dp) with the official two-tone logo from the whatsapp.com brand asset (green speech bubble + white handset, exact path data), and removed the green tint so the white handset stays visible.
+Version: 0.0.66 - Fixed the white-screen-on-relaunch bug after exiting via the "Exit" confirmation dialog: finishAndRemoveTask() alone left the process cached, so the next launch was a warm relaunch that stayed white until touched; the Exit handler now also terminates the process (delayed Process.killProcess) so the next launch is a true cold start.
 
