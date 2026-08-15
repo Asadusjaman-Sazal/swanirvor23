@@ -102,9 +102,16 @@ fun MainScreen(viewModel: SavingsViewModel) {
                 Button(
                     onClick = {
                         showExitDialog = false
-                        // Comment: Clear the task stack with a normal activity finish so Android lifecycle cleanup runs and the next launch is a clean cold start without force-killing the process
+                        // Comment: Clear the task stack AND terminate the process on exit. finishAndRemoveTask() alone leaves the process cached, so the next launch is a warm relaunch that stays on a white screen until the user touches the display. Killing the process makes the next launch a true cold start that draws its first frame correctly; the short delay lets the finish/task removal complete first.
                         val activity = context as? android.app.Activity
                         activity?.finishAndRemoveTask()
+                        activity?.window?.decorView?.postDelayed({
+                            try {
+                                android.os.Process.killProcess(android.os.Process.myPid())
+                            } catch (e: Exception) {
+                                // Fallback: process kill failed, but finishAndRemoveTask() above already cleared the task
+                            }
+                        }, 150)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
