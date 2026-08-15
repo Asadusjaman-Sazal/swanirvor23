@@ -1,4 +1,4 @@
---- .gitignore (原始)
+--- .gitignore
 # Gradle files
 .gradle/
 build/
@@ -27,13 +27,12 @@ local.properties
 .DS_Store
 Thumbs.db
 
-# Optional / Custom database script backup
-supabaseSql.txt
-
-+++ .gitignore (修改后)
-```
+# text file for temporary notes
 ongoing_fixes.txt
 
 #Freebuff files
 .freebuff/
 /.freebuff
+
++++ .gitignore
+```
