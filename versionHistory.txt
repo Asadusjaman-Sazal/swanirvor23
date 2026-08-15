@@ -1,4 +1,4 @@
-Current Version: 0.0.62
+Current Version: 0.0.65
 -----------------------
 
 Version History:
@@ -65,4 +65,7 @@ Version: 0.0.59 - Wired release signing secrets (keystore path, store/key passwo
 Version: 0.0.60 - Added a Mobile No. field to Settings > Profile Information with an immutable +880 prefix (stored with the country code), added the mobileNo column to the local Room app_settings table via migration 8->9, and synced it with the Supabase app_settings.mobile_no column through settings serialization.
 Version: 0.0.61 - Capped the Mobile No. input in Settings > Profile Information at 10 digits (14 characters including the prefilled +880) so the full stored number never exceeds 14 characters.
 Version: 0.0.62 - Added a Mobile No. field to the Sign Up page after Membership No. matching the navy/gold input styling (immutable +880 prefix, max 10 digits), and saved the entered number into the app_settings mobile_no column in Supabase during account creation.
+Version: 0.0.63 - Added Call and Message actions to the Admin Panel > Members Management 3-dot menu, each opening an "Open With" chooser (WhatsApp / Phone for calls, WhatsApp / Message for messages) that launches the selected app using the member's saved mobile number; stored mobileNo on the members row (Room migration 9->10 + Supabase members.mobile_no) so admins can see other members' numbers.
+Version: 0.0.64 - Replaced the generic chat-bubble glyph in the Admin Panel "Open With" chooser with the official WhatsApp brand icon (new ic_whatsapp vector drawable) so the WhatsApp option shows the proper logo.
+Version: 0.0.65 - Fixed the distorted WhatsApp icon in the Admin Panel "Open With" chooser: replaced the solid silhouette (which rendered as an unreadable green blob at 24dp) with the official two-tone logo from the whatsapp.com brand asset (green speech bubble + white handset, exact path data), and removed the green tint so the white handset stays visible.
 

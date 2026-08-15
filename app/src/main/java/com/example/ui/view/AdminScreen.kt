@@ -81,6 +81,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
     var pdfExportType by remember { mutableStateOf("FullLedger") } // "FullLedger" or "Individual"
     // Reference to the selected member for generating individual statement PDFs
     var selectedMemberForPdf by remember { mutableStateOf<Member?>(null) }
+    // State for the "Open With" chooser (Call/Message) on a member row: contact mode + target member
+    var contactTarget by remember { mutableStateOf<Pair<String, Member>?>(null) }
 
     // Duration options for ledger and individual statements filtering
     var selectedDuration by remember { mutableStateOf("All Time") }
@@ -1494,6 +1496,46 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                     expanded = showMenu,
                                     onDismissRequest = { showMenu = false }
                                 ) {
+                                    // Comment: Call and Message actions open an "Open With" chooser so the admin can
+                                    // reach the member via WhatsApp, the phone dialer, or the default messaging app
+                                    DropdownMenuItem(
+                                        text = { Text("Call") },
+                                        onClick = {
+                                            showMenu = false
+                                            if (m.mobileNo.isBlank()) {
+                                                Toast.makeText(context, "No mobile number saved for ${m.name}", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                contactTarget = "Call" to m
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Call,
+                                                contentDescription = "Call",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Message") },
+                                        onClick = {
+                                            showMenu = false
+                                            if (m.mobileNo.isBlank()) {
+                                                Toast.makeText(context, "No mobile number saved for ${m.name}", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                contactTarget = "Message" to m
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Sms,
+                                                contentDescription = "Message",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    )
                                     DropdownMenuItem(
                                         text = { Text("Remove User") },
                                         onClick = {
@@ -1549,6 +1591,20 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                     }
                 }
             }
+        }
+
+        // Comment: "Open With" chooser shown after tapping Call or Message on a member row;
+        // lets the admin reach the member via WhatsApp, the phone dialer, or the default messaging app
+        contactTarget?.let { (mode, targetMember) ->
+            OpenWithDialog(
+                mode = mode,
+                memberName = targetMember.name,
+                onDismiss = { contactTarget = null },
+                onSelect = { channel ->
+                    contactTarget = null
+                    launchMemberContact(context, targetMember, channel)
+                }
+            )
         }
 
         // --- SECTION 5: Reports & Export Accordion ---
@@ -2035,5 +2091,111 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                 }
             }
         }
+    }
+}
+
+// Comment: "Open With" popup letting the admin choose WhatsApp or the system Phone/Message app
+// to contact a member via their saved mobile number (mode is "Call" or "Message").
+@Composable
+private fun OpenWithDialog(
+    mode: String,
+    memberName: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "Open With",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (mode == "Call") "Call ${memberName}" else "Message ${memberName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // WhatsApp option
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onSelect("WhatsApp") }
+                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        // Comment: the drawable already carries the official green bubble + white handset, so no tint
+                        painter = painterResource(id = R.drawable.ic_whatsapp),
+                        contentDescription = "WhatsApp",
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("WhatsApp", style = MaterialTheme.typography.bodyLarge)
+                }
+
+                // Phone (for Call) or default Message app (for Message)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onSelect(if (mode == "Call") "Phone" else "Message") }
+                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (mode == "Call") Icons.Default.Phone else Icons.Default.Sms,
+                        contentDescription = if (mode == "Call") "Phone" else "Message",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = if (mode == "Call") "Phone" else "Message",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Comment: Launch the selected channel (WhatsApp, Phone dialer, or default messaging app) using the
+// member's saved mobile number; shows a toast when no compatible app or number is available.
+private fun launchMemberContact(context: android.content.Context, member: Member, channel: String) {
+    val mobile = member.mobileNo.trim()
+    if (mobile.isEmpty()) {
+        Toast.makeText(context, "No mobile number saved for ${member.name}", Toast.LENGTH_SHORT).show()
+        return
+    }
+    // Comment: Strip the "+" and non-digit characters for the wa.me deep link (WhatsApp expects digits only)
+    val digitsOnly = mobile.filter { it.isDigit() }
+    try {
+        when (channel) {
+            "WhatsApp" -> {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digitsOnly"))
+                context.startActivity(intent)
+            }
+            "Phone" -> {
+                // Comment: ACTION_DIAL opens the dialer with the number pre-filled and needs no CALL_PHONE permission
+                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$mobile"))
+                context.startActivity(intent)
+            }
+            "Message" -> {
+                // Comment: ACTION_SENDTO with smsto: opens the default messaging app pre-filled with the number
+                val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$mobile"))
+                context.startActivity(intent)
+            }
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "No app available to $channel ${member.name}", Toast.LENGTH_SHORT).show()
     }
 }

@@ -19,7 +19,9 @@ data class Member(
     // Comment: Field to track if an admin has sent a targeted notification reminder to this specific member
     val receivedAdminNotification: Boolean = false,
     // Comment: Store member's custom membership number assigned upon signup or registration
-    val membershipNo: String = ""
+    val membershipNo: String = "",
+    // Comment: Member's mobile number (with +880 country code) stored on the shared members row so admins can call/message; synced to the members.mobile_no column
+    val mobileNo: String = ""
 )
 
 /**

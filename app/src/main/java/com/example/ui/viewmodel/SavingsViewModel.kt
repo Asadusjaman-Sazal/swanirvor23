@@ -113,9 +113,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val matchedMember = membersList.find { it.email.trim().equals(savedEmail.trim(), ignoreCase = true) }
                 if (matchedMember != null) {
                     _currentUserId.value = matchedMember.id
-                    // Also update settings profile name and membershipNo for UI matching
+                    // Also update settings profile name, membershipNo, and mobileNo for UI matching
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = matchedMember.name, membershipNo = matchedMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = matchedMember.name, membershipNo = matchedMember.membershipNo, mobileNo = matchedMember.mobileNo))
                 }
             }
         }
@@ -349,9 +349,10 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             }
 
             repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img, mobileNo = mobileNo))
-            // Also update current user member name, avatarUrl, and membershipNo in the database
+            // Also update current user member name, avatarUrl, membershipNo, and mobileNo in the database
+            // so the shared members row (visible to admins) carries the mobile number for Call/Message actions
             if (member != null) {
-                repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo))
+                repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo, mobileNo = mobileNo))
             }
         }
     }
@@ -699,7 +700,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 _currentUserId.value = loggedInMember.id
                 try {
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = loggedInMember.name, membershipNo = loggedInMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = loggedInMember.name, membershipNo = loggedInMember.membershipNo, mobileNo = loggedInMember.mobileNo))
                 } catch (e: Exception) {
                     android.util.Log.e("SavingsViewModel", "Failed to update AppSettings after password update", e)
                 }
@@ -881,9 +882,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     onResult(false, "Your account is suspended. Please contact Admin.")
                 } else {
                     _currentUserId.value = foundMember.id
-                    // Update profile name and membership number in settings to match logged-in user for visual consistency
+                    // Update profile name, membership number, and mobile number in settings to match logged-in user for visual consistency
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
@@ -926,6 +927,10 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             // Determine the role dynamically based on whether any custom user has already signed up in Supabase
             val assignedRole = determineRoleForNewUser()
 
+            // Comment: Build the full mobile number with country code once so it can be stored on both
+            // the members row (shared, visible to admins) and app_settings (current user only)
+            val fullMobileNo = if (mobileNo.isBlank()) "" else "+880${mobileNo.filter(Char::isDigit)}"
+
             var localMemberId: Int? = null
             if (!alreadyExists) {
                 val newMember = Member(
@@ -934,7 +939,8 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     role = assignedRole,
                     status = "Active",
                     totalSavings = 0.0,
-                    membershipNo = membershipNo.trim()
+                    membershipNo = membershipNo.trim(),
+                    mobileNo = fullMobileNo
                 )
                 repository.insertMember(newMember)
                 val updatedList = repository.getAllMembersDirect()
@@ -943,10 +949,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val existingMember = membersList.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
                 if (existingMember != null) {
                     localMemberId = existingMember.id
-                    // Comment: Update the existing local member record's name and membershipNo with the newly registered details
+                    // Comment: Update the existing local member record's name, membershipNo, and mobileNo with the newly registered details
                     val updatedMember = existingMember.copy(
                         name = name.trim(),
-                        membershipNo = membershipNo.trim()
+                        membershipNo = membershipNo.trim(),
+                        mobileNo = fullMobileNo
                     )
                     repository.updateMember(updatedMember)
                 }
@@ -959,7 +966,6 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 // to the Supabase app_settings.mobile_no column (pushed when a session exists, synced later otherwise)
                 try {
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    val fullMobileNo = if (mobileNo.isBlank()) "" else "+880${mobileNo.filter(Char::isDigit)}"
                     repository.updateSettings(settings.copy(mobileNo = fullMobileNo))
                 } catch (e: Exception) {
                     android.util.Log.e("SavingsViewModel", "Failed to save mobile number during signup", e)
@@ -1049,9 +1055,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     _googleLoginError.value = "Your account is suspended. Please contact Admin."
                 } else {
                     _currentUserId.value = foundMember.id
-                    // Update profile name and membership number in settings to match logged-in user for visual consistency
+                    // Update profile name, membership number, and mobile number in settings to match logged-in user for visual consistency
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()

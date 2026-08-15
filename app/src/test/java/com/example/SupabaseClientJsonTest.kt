@@ -26,11 +26,13 @@ class SupabaseClientJsonTest {
             role = "Admin",
             status = "Active",
             receivedAdminNotification = true,
-            membershipNo = "LS-2023-042"
+            membershipNo = "LS-2023-042",
+            mobileNo = "+8801712345678"
         )
 
         val json = SupabaseClient.memberToJson(member)
         assertFalse(json.has("password"))
+        assertEquals("+8801712345678", json.optString("mobile_no"))
 
         val parsed = SupabaseClient.jsonToMember(json)
         assertEquals(member, parsed)

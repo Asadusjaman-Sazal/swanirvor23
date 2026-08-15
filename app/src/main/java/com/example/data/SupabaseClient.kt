@@ -488,6 +488,7 @@ object SupabaseClient {
             put("status", member.status)
             put("received_admin_notification", member.receivedAdminNotification)
             put("membership_no", member.membershipNo)
+            put("mobile_no", member.mobileNo)
         }
     }
 
@@ -502,7 +503,8 @@ object SupabaseClient {
             role = json.optString("role", "Member"),
             status = json.optString("status", "Active"),
             receivedAdminNotification = json.optBoolean("received_admin_notification", false),
-            membershipNo = json.optString("membership_no", "")
+            membershipNo = json.optString("membership_no", ""),
+            mobileNo = json.optString("mobile_no", "")
         )
     }
 
@@ -668,6 +670,7 @@ object SupabaseClient {
             put("avatar_url", member.avatarUrl ?: JSONObject.NULL)
             put("total_savings", member.totalSavings)
             put("membership_no", member.membershipNo)
+            put("mobile_no", member.mobileNo)
             put("received_admin_notification", member.receivedAdminNotification)
         }
         // Comment: URL-encode the email so values with reserved characters (+ , space) do not break the filter
