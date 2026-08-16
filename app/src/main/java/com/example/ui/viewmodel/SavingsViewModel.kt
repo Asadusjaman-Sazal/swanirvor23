@@ -324,6 +324,10 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
             var img = profileImageUrl ?: current.profileImageUrl
 
+            // Comment: The input box holds digits only (the +880 prefix is shown separately), so always persist the
+            // full number with the immutable country code regardless of which profile field triggered the save
+            val normalizedMobileNo = if (mobileNo.isBlank() || mobileNo.startsWith("+880")) mobileNo else "+880${mobileNo.filter(Char::isDigit)}"
+
             // Comment: If a local profile image path is provided (e.g. starts with /), upload it to Supabase Storage
             if (profileImageUrl != null && profileImageUrl.startsWith("/")) {
                 try {
@@ -348,11 +352,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
 
-            repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img, mobileNo = mobileNo))
+            repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img, mobileNo = normalizedMobileNo))
             // Also update current user member name, avatarUrl, membershipNo, and mobileNo in the database
             // so the shared members row (visible to admins) carries the mobile number for Call/Message actions
             if (member != null) {
-                repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo, mobileNo = mobileNo))
+                repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo, mobileNo = normalizedMobileNo))
             }
         }
     }
@@ -639,17 +643,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Comment: Determine the role for a new user: if no manual members are present in Supabase, the first is Admin, others are Members.
+    // Comment: New registrations always assume the Member role; Admin is granted only through admin approval flows
     private suspend fun determineRoleForNewUser(): String {
-        return try {
-            val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
-            val manualMembers = remoteMembers.filter { member ->
-                member.email.trim().lowercase() !in Constants.SEED_EMAILS
-            }
-            if (manualMembers.isEmpty()) "Admin" else "Member"
-        } catch (e: Exception) {
-            "Member" // Fallback to safe default
-        }
+        return "Member"
     }
 
     // Comment: Store state to show the Reset/Update Password Dialog on deep link password recovery
