@@ -66,13 +66,16 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
+    val currentMemberEmail by viewModel.currentMemberEmail.collectAsStateWithLifecycle()
+    // Comment: Prefer the authenticated account email so this field cannot be changed through profile settings.
+    val registeredEmail = currentMemberEmail ?: com.example.data.SupabaseClient.getSessionEmail().orEmpty()
 
     var isDarkMode by remember { mutableStateOf(appSettings.isDarkMode) }
     var savingsGoalText by remember { mutableStateOf(appSettings.personalGoal.toInt().toString()) }
     var profileNameText by remember { mutableStateOf(appSettings.profileName) }
     var membershipNoText by remember { mutableStateOf(appSettings.membershipNo) }
-    // Comment: The stored mobile number carries the +880 country code; the input box shows only the digits after the immutable prefix
-    var mobileNoText by remember { mutableStateOf(appSettings.mobileNo.removePrefix("+880")) }
+    // Comment: The stored mobile number carries the +88 country code; the input box shows only the digits after the immutable prefix
+    var mobileNoText by remember { mutableStateOf(appSettings.mobileNo.removePrefix("+88")) }
 
     // Comment: Track the single open Settings accordion section (null = all closed); only one can be open at a time
     var settingsOpenSection by remember { mutableStateOf<String?>(null) }
@@ -108,7 +111,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
         savingsGoalText = appSettings.personalGoal.toInt().toString()
         profileNameText = appSettings.profileName
         membershipNoText = appSettings.membershipNo
-        mobileNoText = appSettings.mobileNo.removePrefix("+880")
+        mobileNoText = appSettings.mobileNo.removePrefix("+88")
         // Comment: Synchronize automated notification states with remote app settings
         notificationsEnabled = appSettings.enableNotifications
         notificationDay = appSettings.notificationDay
@@ -448,116 +451,90 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                     }
                 }
 
-                // Profile Name row layout with save button to the right
+                // Profile Name uses the full available width; all profile fields save together below.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(text = "Profile Name", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = profileNameText,
-                            onValueChange = {
-                                profileNameText = it
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("profile_name_input"),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        Button(
-                            onClick = {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                                viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = mobileNoText)
-                                Toast.makeText(context, "Profile name saved successfully!", Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            modifier = Modifier.testTag("profile_name_save_button")
-                        ) {
-                            Text("Save")
-                        }
-                    }
+                    OutlinedTextField(
+                        value = profileNameText,
+                        onValueChange = { profileNameText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("profile_name_input"),
+                        shape = RoundedCornerShape(8.dp)
+                    )
                 }
 
-                // Membership Number row layout with save button to the right
+                // Membership number uses the full available width; it shares the profile save action.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(text = "Membership No.", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = membershipNoText,
-                            onValueChange = {
-                                membershipNoText = it
-                            },
-                            placeholder = { Text("Enter your membership number") },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("membership_no_input"),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        Button(
-                            onClick = {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                                viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = mobileNoText)
-                                Toast.makeText(context, "Membership number saved successfully!", Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            modifier = Modifier.testTag("membership_no_save_button")
-                        ) {
-                            Text("Save")
-                        }
-                    }
+                    OutlinedTextField(
+                        value = membershipNoText,
+                        onValueChange = { membershipNoText = it },
+                        placeholder = { Text("Enter your membership number") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("membership_no_input"),
+                        shape = RoundedCornerShape(8.dp)
+                    )
                 }
 
-                // Mobile No. row layout with immutable +880 prefix and save button to the right
+                // Mobile number uses the full available width while retaining the immutable +88 prefix.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(text = "Mobile No.", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    OutlinedTextField(
+                        value = mobileNoText,
+                        onValueChange = {
+                            // Comment: Keep only digits, drop a pasted leading 88 country code so it is not doubled,
+                            // and cap at 11 digits so the full number with the +88 prefix never exceeds 14 characters
+                            mobileNoText = it.filter(Char::isDigit).let { digits ->
+                                val cleaned = if (digits.startsWith("88") && digits.length > 11) digits.removePrefix("88") else digits
+                                cleaned.take(11)
+                            }
+                        },
+                        prefix = { Text("+88", fontWeight = FontWeight.Bold) },
+                        placeholder = { Text("1XXXXXXXXX") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("mobile_no_input"),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                // Email is sourced from the authenticated account and remains read-only in profile settings.
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "Email", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+                    OutlinedTextField(
+                        value = registeredEmail,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("email_input"),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                // Comment: Save all editable Profile Information fields together with one centered action.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Button(
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            val fullMobileNo = if (mobileNoText.isBlank()) "" else "+88$mobileNoText"
+                            viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = fullMobileNo)
+                            Toast.makeText(context, "Profile information saved successfully!", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 24.dp),
+                        modifier = Modifier.testTag("profile_info_save_button")
                     ) {
-                        OutlinedTextField(
-                            value = mobileNoText,
-                            onValueChange = {
-                                // Comment: Keep only digits, drop a pasted leading 880 country code so it is not doubled,
-                                // and cap at 10 digits so the full number with the +880 prefix never exceeds 14 characters
-                                mobileNoText = it.filter(Char::isDigit).let { digits ->
-                                    val cleaned = if (digits.startsWith("880") && digits.length > 10) digits.removePrefix("880") else digits
-                                    cleaned.take(10)
-                                }
-                            },
-                            prefix = { Text("+880", fontWeight = FontWeight.Bold) },
-                            placeholder = { Text("1XXXXXXXXX") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("mobile_no_input"),
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        Button(
-                            onClick = {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                                // Comment: Store the full number including the immutable +880 country code prefix
-                                val fullMobileNo = if (mobileNoText.isBlank()) "" else "+880$mobileNoText"
-                                viewModel.updateProfileInfo(profileNameText, membershipNoText, mobileNo = fullMobileNo)
-                                Toast.makeText(context, "Mobile number saved successfully!", Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            modifier = Modifier.testTag("mobile_no_save_button")
-                        ) {
-                            Text("Save")
-                        }
+                        Icon(Icons.Default.Save, contentDescription = "Save profile information", modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save")
                     }
                 }
             }
