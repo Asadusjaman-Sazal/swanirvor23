@@ -1,4 +1,4 @@
-Current Version: 1.0.5
+Current Version: 1.0.8
 -----------------------
 
 Version History:
@@ -75,3 +75,6 @@ Version: 1.0.2 - Prevented savings duplication during update sync by reconciling
 Version: 1.0.3 - Added an immutable registered email field and consolidated Profile Information saving into one centered button.
 Version: 1.0.4 - Changed the Settings Profile Information mobile prefix to +88 and expanded the editable number limit to 11 digits while keeping the full value within 14 characters.
 Version: 1.0.5 - Updated the Members Dashboard to show Membership No., enlarge the savings history dialog, and support large profile image viewing.
+Version: 1.0.6 - Opened the Members Dashboard Savings History popup in full-screen mode.
+Version: 1.0.7 - Sized the Members Dashboard Savings History popup to 95% of the screen and moved its Close button to the bottom.
+Version: 1.0.8 - Updated Admin Panel Members Management to show Membership No. under member names instead of email.
