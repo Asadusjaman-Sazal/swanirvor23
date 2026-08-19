@@ -604,9 +604,8 @@ class SavingsRepository(
     }
 
     /**
-     * Comment: One-time backfill that assigns a stable client-generated UUID match key to every
-     * pre-existing savings row (local and remote) so future syncs match purely on sync_key.
-     * Idempotent: rows that already carry a key are left untouched, so it naturally runs once.
+     * Comment: Reconcile legacy savings rows before assigning keys so an identity mismatch
+     * cannot be mistaken for a new contribution and duplicated during the same sync.
      */
     private suspend fun backfillSavingsSyncKeys(
         remoteSavings: List<Savings>,
@@ -616,50 +615,68 @@ class SavingsRepository(
         val updatedLocal = localSavings.toMutableList()
 
         // Comment: Self-heal any remote rows still missing a key (server-side backfill not yet run).
-        // The key is derived deterministically from the remote id so every device assigns the same value,
-        // preventing cross-device divergence during the backfill window.
+        // Abort this sync if the patch fails; inventing a local key while the remote row remains blank
+        // would make the next upsert create a duplicate.
         for (i in updatedRemote.indices) {
             val remote = updatedRemote[i]
             if (remote.syncKey.isBlank()) {
                 val key = java.util.UUID.nameUUIDFromBytes("savings:${remote.id}".toByteArray(Charsets.UTF_8)).toString()
-                com.example.data.SupabaseClient.dbPatchSavingsSyncKey(remote.id, key)
+                val patched = com.example.data.SupabaseClient.dbPatchSavingsSyncKey(remote.id, key)
+                if (!patched) {
+                    throw IllegalStateException("Could not assign sync key to remote savings ${remote.id}")
+                }
                 updatedRemote[i] = remote.copy(syncKey = key)
             }
         }
 
         val remoteById = updatedRemote.associateBy { it.id }
+        val remoteByKey = updatedRemote.associateBy { it.syncKey }
+        val matchedRemoteIds = mutableSetOf<Int>()
 
-        // Comment: Backfill local rows missing a key by adopting the matching remote key, or generating a fresh key for genuinely local-only rows and pushing them up
+        // Comment: Reconcile by stable key first, then legacy numeric ID, exact row details,
+        // and finally a unique member/timestamp identity. Only proven local-only rows get a new key.
         for (i in updatedLocal.indices) {
             val local = updatedLocal[i]
-            if (local.syncKey.isNotBlank()) continue
+            val keyMatch = remoteByKey[local.syncKey]
+                ?.takeIf { local.syncKey.isNotBlank() && it.id !in matchedRemoteIds }
+            val idMatch = remoteById[local.id]
+                ?.takeIf { it.memberId == local.memberId && it.id !in matchedRemoteIds }
+            val detailsMatches = updatedRemote
+                .filter { it.id !in matchedRemoteIds }
+                .filter {
+                    it.memberId == local.memberId &&
+                            it.amount == local.amount &&
+                            it.dateText == local.dateText &&
+                            it.timestamp == local.timestamp
+                }
+            val detailsMatch = detailsMatches.singleOrNull()
+            val legacyIdentityMatches = updatedRemote
+                .filter { it.id !in matchedRemoteIds }
+                .filter { it.memberId == local.memberId && it.timestamp == local.timestamp }
+            val legacyIdentityMatch = legacyIdentityMatches.singleOrNull()
+            val matchedRemote = keyMatch ?: idMatch ?: detailsMatch ?: legacyIdentityMatch
 
-            // Exact details match is the primary bridge; the numeric id match (same member) catches
-            // rows whose amount/date were legitimately edited before the key existed.
-            val detailsMatch = updatedRemote.firstOrNull {
-                it.memberId == local.memberId &&
-                        it.amount == local.amount &&
-                        it.dateText == local.dateText &&
-                        it.timestamp == local.timestamp
+            if (matchedRemote == null && (detailsMatches.size > 1 || legacyIdentityMatches.size > 1)) {
+                throw IllegalStateException("Ambiguous legacy identity for local savings ${local.id}")
             }
-            val idMatch = if (detailsMatch == null) {
-                remoteById[local.id]?.takeIf { it.memberId == local.memberId }
-            } else null
-            val matchedRemote = detailsMatch ?: idMatch
 
             if (matchedRemote != null) {
-                savingsDao.updateSavings(local.copy(syncKey = matchedRemote.syncKey))
-                updatedLocal[i] = local.copy(syncKey = matchedRemote.syncKey)
-            } else {
+                matchedRemoteIds.add(matchedRemote.id)
+                // Comment: Use the remote row as the canonical record so its numeric ID and sync key
+                // replace the local identity in one transaction when the two databases differ.
+                if (local.id != matchedRemote.id) {
+                    savingsDao.replaceSavingsWithRemote(local, matchedRemote)
+                } else if (local != matchedRemote) {
+                    savingsDao.insertSavings(matchedRemote)
+                }
+                updatedLocal[i] = matchedRemote
+            } else if (local.syncKey.isBlank()) {
+                // Comment: Do not push from the backfill itself; the normal sync loop must see the
+                // final local key map before it performs the single local-only upsert.
                 val freshKey = java.util.UUID.randomUUID().toString()
                 val withKey = local.copy(syncKey = freshKey)
                 savingsDao.updateSavings(withKey)
                 updatedLocal[i] = withKey
-                val inserted = com.example.data.SupabaseClient.dbUpsertSavings(withKey)
-                if (inserted != null && inserted.id != withKey.id) {
-                    savingsDao.replaceSavingsWithRemote(withKey, inserted)
-                    updatedLocal[i] = inserted
-                }
             }
         }
 

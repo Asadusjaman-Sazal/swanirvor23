@@ -1,4 +1,4 @@
-Current Version: 1.0.1
+Current Version: 1.0.2
 -----------------------
 
 Version History:
@@ -71,3 +71,4 @@ Version: 0.0.65 - Fixed the distorted WhatsApp icon in the Admin Panel "Open Wit
 Version: 0.0.66 - Fixed the white-screen-on-relaunch bug after exiting via the "Exit" confirmation dialog: finishAndRemoveTask() alone left the process cached, so the next launch was a warm relaunch that stayed white until touched; the Exit handler now also terminates the process (delayed Process.killProcess) so the next launch is a true cold start.
 Version: 1.0.0 - Initial Release.
 Version: 1.0.1 - Fixed the stored mobile number losing the immutable +880 country code prefix when saving profile name/membership/picture in Settings, and made new registrations assume the Member role instead of granting Admin to the first user.
+Version: 1.0.2 - Prevented savings duplication during update sync by reconciling legacy rows before assigning new sync keys and pushing local-only records.
