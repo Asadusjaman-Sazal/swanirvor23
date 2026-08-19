@@ -1457,7 +1457,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                                 Text(
-                                    m.email,
+                                    "Membership No.: ${m.membershipNo.ifBlank { "Not set" }}",
                                     style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
                                 )
                             }

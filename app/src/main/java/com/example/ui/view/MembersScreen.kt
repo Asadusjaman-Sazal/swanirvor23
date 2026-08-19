@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.painterResource
 import android.graphics.drawable.BitmapDrawable
@@ -224,22 +225,28 @@ fun MemberSavingsHistoryDialog(
         .filter { isCurrentMonth(it.dateText) }
         .sumOf { it.amount }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp)
-                .testTag("member_history_dialog"),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
+            Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .fillMaxSize(0.95f)
+                    .testTag("member_history_dialog"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 // Header section with avatar, info, and close button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -416,19 +423,22 @@ fun MemberSavingsHistoryDialog(
                     }
                 }
 
-                // Close Action Button
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("dismiss_history_dialog"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF0C9488)
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Close History", color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Close Action Button stays at the bottom of the 95% dialog window.
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("dismiss_history_dialog"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0C9488)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Close", color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                    }
                 }
             }
         }
