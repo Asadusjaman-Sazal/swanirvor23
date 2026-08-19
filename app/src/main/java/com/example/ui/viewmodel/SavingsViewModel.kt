@@ -324,9 +324,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
             var img = profileImageUrl ?: current.profileImageUrl
 
-            // Comment: The input box holds digits only (the +880 prefix is shown separately), so always persist the
+            // Comment: The input box holds digits only (the +88 prefix is shown separately), so always persist the
             // full number with the immutable country code regardless of which profile field triggered the save
-            val normalizedMobileNo = if (mobileNo.isBlank() || mobileNo.startsWith("+880")) mobileNo else "+880${mobileNo.filter(Char::isDigit)}"
+            val normalizedMobileNo = if (mobileNo.isBlank() || mobileNo.startsWith("+88")) mobileNo else "+88${mobileNo.filter(Char::isDigit)}"
 
             // Comment: If a local profile image path is provided (e.g. starts with /), upload it to Supabase Storage
             if (profileImageUrl != null && profileImageUrl.startsWith("/")) {

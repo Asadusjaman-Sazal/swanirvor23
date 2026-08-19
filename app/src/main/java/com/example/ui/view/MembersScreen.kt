@@ -160,7 +160,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                                             )
                                         )
                                         Text(
-                                            text = member.email,
+                                            text = "Membership No.: ${member.membershipNo.ifBlank { "Not set" }}",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 color = MaterialTheme.colorScheme.outline
                                             )
@@ -217,6 +217,8 @@ fun MemberSavingsHistoryDialog(
     savingsList: List<Savings>,
     onDismiss: () -> Unit
 ) {
+    var showLargeProfileImage by remember { mutableStateOf(false) }
+
     // Calculate total savings for the current month
     val currentMonthSavingsTotal = savingsList
         .filter { isCurrentMonth(it.dateText) }
@@ -249,14 +251,21 @@ fun MemberSavingsHistoryDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        MemberAvatar(name = member.name, avatarUrl = member.avatarUrl, size = 48.dp)
+                        MemberAvatar(
+                            name = member.name,
+                            avatarUrl = member.avatarUrl,
+                            size = 48.dp,
+                            modifier = Modifier
+                                .clickable { showLargeProfileImage = true }
+                                .testTag("history_profile_image")
+                        )
                         Column {
                             Text(
                                 text = member.name,
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             )
                             Text(
-                                text = member.email,
+                                text = "Membership No.: ${member.membershipNo.ifBlank { "Not set" }}",
                                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
                             )
                         }
@@ -332,12 +341,12 @@ fun MemberSavingsHistoryDialog(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 )
 
-                // Scrollable deposit history ledger list
+                // Scrollable deposit history ledger list; the 10% larger height gives the history dialog more vertical room.
                 if (savingsList.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(120.dp),
+                            .height(132.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -349,7 +358,7 @@ fun MemberSavingsHistoryDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 240.dp)
+                            .heightIn(max = 264.dp)
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -420,6 +429,49 @@ fun MemberSavingsHistoryDialog(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text("Close History", color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                }
+            }
+        }
+    }
+
+    // Show the selected member avatar in a larger overlay without leaving the savings history dialog.
+    if (showLargeProfileImage) {
+        Dialog(onDismissRequest = { showLargeProfileImage = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (member.avatarUrl.isNullOrEmpty()) {
+                        MemberAvatar(name = member.name, avatarUrl = null, size = 240.dp)
+                    } else {
+                        AsyncImage(
+                            model = member.avatarUrl,
+                            contentDescription = "Large avatar of ${member.name}",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 360.dp)
+                                .aspectRatio(1f)
+                                .clip(CircleShape)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    Text(
+                        text = member.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
