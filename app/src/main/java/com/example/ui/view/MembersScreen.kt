@@ -74,6 +74,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
 
     // State to hold the currently selected member for showing their savings history
     var selectedMemberForHistory by remember { mutableStateOf<Member?>(null) }
+    var selectedMemberForImage by remember { mutableStateOf<Member?>(null) }
 
     Column(
         modifier = Modifier
@@ -151,7 +152,13 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    MemberAvatar(name = member.name, avatarUrl = member.avatarUrl)
+                                    MemberAvatar(
+                                        name = member.name,
+                                        avatarUrl = member.avatarUrl,
+                                        modifier = Modifier
+                                            .clickable { selectedMemberForImage = member }
+                                            .testTag("member_avatar_${member.id}")
+                                    )
                                     Column {
                                         Text(
                                             text = member.name,
@@ -204,6 +211,13 @@ fun MembersScreen(viewModel: SavingsViewModel) {
             member = member,
             savingsList = memberSavings,
             onDismiss = { selectedMemberForHistory = null }
+        )
+    }
+
+    selectedMemberForImage?.let { member ->
+        MemberProfileImageDialog(
+            member = member,
+            onDismiss = { selectedMemberForImage = null }
         )
     }
 }
@@ -444,45 +458,55 @@ fun MemberSavingsHistoryDialog(
         }
     }
 
-    // Show the selected member avatar in a larger overlay without leaving the savings history dialog.
     if (showLargeProfileImage) {
-        Dialog(onDismissRequest = { showLargeProfileImage = false }) {
-            Card(
+        MemberProfileImageDialog(
+            member = member,
+            onDismiss = { showLargeProfileImage = false }
+        )
+    }
+}
+
+@Composable
+private fun MemberProfileImageDialog(
+    member: Member,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (member.avatarUrl.isNullOrEmpty()) {
-                        MemberAvatar(name = member.name, avatarUrl = null, size = 240.dp)
-                    } else {
-                        AsyncImage(
-                            model = member.avatarUrl,
-                            contentDescription = "Large avatar of ${member.name}",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp)
-                                .aspectRatio(1f)
-                                .clip(CircleShape)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                    Text(
-                        text = member.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        textAlign = TextAlign.Center
+                if (member.avatarUrl.isNullOrEmpty()) {
+                    MemberAvatar(name = member.name, avatarUrl = null, size = 240.dp)
+                } else {
+                    AsyncImage(
+                        model = member.avatarUrl,
+                        contentDescription = "Large avatar of ${member.name}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .aspectRatio(1f)
+                            .clip(CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                        contentScale = ContentScale.Crop
                     )
                 }
+                Text(
+                    text = member.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
