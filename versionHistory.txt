@@ -1,4 +1,4 @@
-Current Version: 1.0.10
+Current Version: 1.0.11
 -----------------------
 
 Version History:
@@ -80,3 +80,4 @@ Version: 1.0.7 - Sized the Members Dashboard Savings History popup to 95% of the
 Version: 1.0.8 - Updated Admin Panel Members Management to show Membership No. under member names instead of email.
 Version: 1.0.9 - Updated the Members Dashboard so avatar taps open the enlarged profile image while member-detail taps open Savings History.
 Version: 1.0.10 - Fixed Admin Panel This Week's Payment to classify payments by the entered contribution date instead of the admin entry timestamp.
+Version: 1.0.11 - Restored profile image URLs from the remote member record after local app data reset and login.
