@@ -878,9 +878,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     onResult(false, "Your account is suspended. Please contact Admin.")
                 } else {
                     _currentUserId.value = foundMember.id
-                    // Update profile name, membership number, and mobile number in settings to match logged-in user for visual consistency
+                    // Restore the remote member avatar while rebuilding local settings after a data reset
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo, profileImageUrl = foundMember.avatarUrl ?: settings.profileImageUrl))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
@@ -1051,9 +1051,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     _googleLoginError.value = "Your account is suspended. Please contact Admin."
                 } else {
                     _currentUserId.value = foundMember.id
-                    // Update profile name, membership number, and mobile number in settings to match logged-in user for visual consistency
+                    // Restore the remote member avatar while rebuilding local settings after a data reset
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo, profileImageUrl = foundMember.avatarUrl ?: settings.profileImageUrl))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
