@@ -815,7 +815,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         )
     }
 
-    // Active cycle Sunday to Saturday date/timestamp range and status calculations
+    // Active cycle Sunday to Saturday range and payment-date status calculations
     val (currentSunday, currentSaturday) = getCurrentCycleRange()
 
     // Comment: Format the Starts (this week's Sunday) and Ends (this week's Saturday) dates directly from the robust currentSunday and currentSaturday timestamps
@@ -828,7 +828,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
     val paidMemberIds = members.filter { m ->
         allSavings.any { s ->
             s.memberId == m.id &&
-                    (if (s.timestamp > 0) s.timestamp else parseDateTextToMillis(s.dateText)) in currentSunday..currentSaturday
+                    parseDateTextToMillis(s.dateText) in currentSunday..currentSaturday
         }
     }.map { it.id }.toSet()
 
@@ -1177,11 +1177,11 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                     }
                                 }
 
-                                // Add comment: Show the weekly amount paid on the right side of the member name if they are in the Paid list tab
+                                // Show the weekly amount based on the contribution date if the member is in the Paid list tab
                                 if (selectedActiveCycleTab == "Paid") {
                                     val memberSavingsThisWeek = allSavings.filter { s ->
                                         s.memberId == m.id &&
-                                                (if (s.timestamp > 0) s.timestamp else parseDateTextToMillis(s.dateText)) in currentSunday..currentSaturday
+                                                parseDateTextToMillis(s.dateText) in currentSunday..currentSaturday
                                     }
                                     val totalWeeklyAmount = memberSavingsThisWeek.sumOf { it.amount }
                                     Text(

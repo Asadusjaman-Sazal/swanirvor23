@@ -1,4 +1,4 @@
-Current Version: 1.0.8
+Current Version: 1.0.10
 -----------------------
 
 Version History:
@@ -78,3 +78,5 @@ Version: 1.0.5 - Updated the Members Dashboard to show Membership No., enlarge t
 Version: 1.0.6 - Opened the Members Dashboard Savings History popup in full-screen mode.
 Version: 1.0.7 - Sized the Members Dashboard Savings History popup to 95% of the screen and moved its Close button to the bottom.
 Version: 1.0.8 - Updated Admin Panel Members Management to show Membership No. under member names instead of email.
+Version: 1.0.9 - Updated the Members Dashboard so avatar taps open the enlarged profile image while member-detail taps open Savings History.
+Version: 1.0.10 - Fixed Admin Panel This Week's Payment to classify payments by the entered contribution date instead of the admin entry timestamp.
