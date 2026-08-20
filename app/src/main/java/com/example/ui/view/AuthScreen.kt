@@ -54,7 +54,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
     var nameInput by remember { mutableStateOf("") }
     // Comment: Store the user's membership number during the Sign Up process
     var membershipNoInput by remember { mutableStateOf("") }
-    // Comment: Store the user's mobile number during the Sign Up process (digits only; the +880 prefix is prepended on save)
+    // Comment: Store the user's mobile number during the Sign Up process (digits only; the +88 prefix is prepended on save)
     var mobileNoInput by remember { mutableStateOf("") }
     // Comment: Prefill the email field with the last registered/logged-in email address for quick and easy authentication
     var emailInput by remember { mutableStateOf(com.example.data.SupabaseClient.getRegisteredEmail()) }
@@ -337,7 +337,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                     }
 
                     // Comment: Form - Mobile No Field (Only shown in Sign Up Mode as requested)
-                    // Matches the Membership No. box styling; the +880 prefix is immutable and only digits are typed
+                    // Matches the Membership No. box styling; the +88 prefix is immutable and only digits are typed
                     AnimatedVisibility(
                         visible = !isSignInMode,
                         enter = fadeIn() + expandVertically(),
@@ -346,15 +346,15 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                         OutlinedTextField(
                             value = mobileNoInput,
                             onValueChange = {
-                                // Comment: Keep only digits, drop a pasted leading 880 country code so it is not doubled,
-                                // and cap at 10 digits so the full number with the +880 prefix never exceeds 14 characters
+                                // Comment: Keep only digits, drop a pasted leading 88 country code so it is not doubled,
+                                // and cap at 11 digits so the full number with the +88 prefix never exceeds 14 characters
                                 mobileNoInput = it.filter(Char::isDigit).let { digits ->
-                                    val cleaned = if (digits.startsWith("880") && digits.length > 10) digits.removePrefix("880") else digits
-                                    cleaned.take(10)
+                                    val cleaned = if (digits.startsWith("88") && digits.length > 11) digits.removePrefix("88") else digits
+                                    cleaned.take(11)
                                 }
                             },
                             leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Mobile No Icon", tint = goldAccent) },
-                            prefix = { Text("+880", fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.7f)) },
+                            prefix = { Text("+88", fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.7f)) },
                             placeholder = { Text("1XXXXXXXXX", color = Color.White.copy(alpha = 0.4f)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),

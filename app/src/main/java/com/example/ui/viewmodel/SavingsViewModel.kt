@@ -925,7 +925,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
             // Comment: Build the full mobile number with country code once so it can be stored on both
             // the members row (shared, visible to admins) and app_settings (current user only)
-            val fullMobileNo = if (mobileNo.isBlank()) "" else "+880${mobileNo.filter(Char::isDigit)}"
+            val fullMobileNo = if (mobileNo.isBlank()) "" else "+88${mobileNo.filter(Char::isDigit)}"
 
             var localMemberId: Int? = null
             if (!alreadyExists) {

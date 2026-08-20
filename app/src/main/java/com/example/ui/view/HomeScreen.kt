@@ -91,11 +91,10 @@ fun HomeScreen(viewModel: SavingsViewModel) {
     // Calculate total savings for the current month
     val currentMonthSavings = savingsList.filter { isCurrentMonth(it.dateText) }.sumOf { it.amount }
 
-    // Check if the user has paid in the last cycle (previous week Sunday to Saturday)
+    // Check the selected contribution date in the last cycle (previous week Sunday to Saturday)
     val (lastSunday, lastSaturday) = getPreviousCycleRange()
     val userPaidLastCycle = savingsList.any { s ->
-        val t = if (s.timestamp > 0) s.timestamp else parseDateTextToMillis(s.dateText)
-        t in lastSunday..lastSaturday
+        parseDateTextToMillis(s.dateText) in lastSunday..lastSaturday
     }
 
     // Active Cycle range (this week's Sunday 00:00 to Saturday 23:59)
@@ -103,8 +102,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
         getCurrentCycleRange()
     }
     val userPaidCurrentActiveCycle = savingsList.any { s ->
-        val t = if (s.timestamp > 0) s.timestamp else parseDateTextToMillis(s.dateText)
-        t in activeCycleStartsMillis..activeCycleEndsMillis
+        parseDateTextToMillis(s.dateText) in activeCycleStartsMillis..activeCycleEndsMillis
     }
 
     var editingSavings by remember { mutableStateOf<Savings?>(null) }
