@@ -1,4 +1,4 @@
-Current Version: 1.0.11
+Current Version: 1.0.13
 -----------------------
 
 Version History:
@@ -81,3 +81,5 @@ Version: 1.0.8 - Updated Admin Panel Members Management to show Membership No. u
 Version: 1.0.9 - Updated the Members Dashboard so avatar taps open the enlarged profile image while member-detail taps open Savings History.
 Version: 1.0.10 - Fixed Admin Panel This Week's Payment to classify payments by the entered contribution date instead of the admin entry timestamp.
 Version: 1.0.11 - Restored profile image URLs from the remote member record after local app data reset and login.
+Version: 1.0.12 - Updated Personal Dashboard warning and congratulations cards to classify payments by the selected contribution date.
+Version: 1.0.13 - Updated Sign Up mobile number input to use the immutable +88 prefix and allow 11 editable digits.
