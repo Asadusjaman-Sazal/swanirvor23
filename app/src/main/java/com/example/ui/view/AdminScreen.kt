@@ -56,6 +56,7 @@ import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.escapeCsv
 import com.example.util.formatToDdMmYyyy
 import com.example.util.getCurrentCycleRange
+import com.example.util.getPreviousCycleRange
 import com.example.util.parseDateTextToMillis
 import java.text.SimpleDateFormat
 import java.util.*
@@ -156,23 +157,9 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                 cal.set(Calendar.MILLISECOND, 0)
                 return Pair(cal.timeInMillis, Long.MAX_VALUE)
             }
-            "Last Month" -> {
-                val calStart = Calendar.getInstance()
-                calStart.add(Calendar.MONTH, -1)
-                calStart.set(Calendar.DAY_OF_MONTH, 1)
-                calStart.set(Calendar.HOUR_OF_DAY, 0)
-                calStart.set(Calendar.MINUTE, 0)
-                calStart.set(Calendar.SECOND, 0)
-                calStart.set(Calendar.MILLISECOND, 0)
-
-                val calEnd = Calendar.getInstance()
-                calEnd.set(Calendar.DAY_OF_MONTH, 1)
-                calEnd.set(Calendar.HOUR_OF_DAY, 0)
-                calEnd.set(Calendar.MINUTE, 0)
-                calEnd.set(Calendar.SECOND, 0)
-                calEnd.set(Calendar.MILLISECOND, 0)
-
-                return Pair(calStart.timeInMillis, calEnd.timeInMillis - 1)
+            "Last Week" -> {
+                val (start, end) = getPreviousCycleRange()
+                return Pair(start, end)
             }
             "Last 3 Months" -> {
                 val cal = Calendar.getInstance()
@@ -372,13 +359,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
 
                             val serialNo = (index + 1).toString()
 
-                            // Use customized appSettings membership No for current user, otherwise generate sequential IDs
-                            // This ensures the custom Membership No. from Settings is displayed in the ledger
-                            val membershipNo = if (m.id == viewModel.currentUserMemberId) {
-                                appSettings.membershipNo
-                            } else {
-                                "LS-2023-${String.format(Locale.US, "%03d", m.id)}"
-                            }
+                            // Use the member's real Membership No. stored in their profile (Settings → Profile Information)
+                            val membershipNo = m.membershipNo.ifBlank { "N/A" }
                             // Format total savings as integer per user preference
                             val totalSavingsStr = String.format(Locale.US, "%,.0f৳", m.totalSavings)
 
@@ -486,11 +468,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                     textSize = 10f
                                 }
 
-                                val membershipId = if (member.id == viewModel.currentUserMemberId) {
-                                    appSettings.membershipNo
-                                } else {
-                                    "LS-2023-${String.format(Locale.US, "%03d", member.id)}"
-                                }
+                                val membershipId = member.membershipNo.ifBlank { "N/A" }
 
                                 cv.drawText("Member Name:", 55f, 115f, labelPaint)
                                 cv.drawText(member.name, 155f, 115f, valPaint)
@@ -661,11 +639,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                     textSize = 10f
                                 }
 
-                                val membershipId = if (member.id == viewModel.currentUserMemberId) {
-                                    appSettings.membershipNo
-                                } else {
-                                    "LS-2023-${String.format(Locale.US, "%03d", member.id)}"
-                                }
+                                val membershipId = member.membershipNo.ifBlank { "N/A" }
 
                                 canvas.drawText("Member Name:", 55f, 115f, labelPaint)
                                 canvas.drawText(member.name, 155f, 115f, valPaint)
@@ -1636,7 +1610,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 ) {
                     val durationOptions = listOf(
-                        "All Time", "This Week", "This Month", "Last Month",
+                        "All Time", "This Week", "Last Week", "This Month",
                         "Last 3 Months", "Last 6 Months", "Last 12 Months", "Custom"
                     )
 
@@ -1815,11 +1789,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             val sortedList = members.sortedBy { it.name }
                             sortedList.forEach { member ->
                                 val totalSavingsInPeriod = memberSavingsMap[member.id]?.sumOf { it.amount } ?: 0.0
-                                val membershipId = if (member.id == viewModel.currentUserMemberId) {
-                                    appSettings.membershipNo
-                                } else {
-                                    "LS-2023-${String.format(Locale.US, "%03d", member.id)}"
-                                }
+                                val membershipId = member.membershipNo.ifBlank { "N/A" }
 
                                 Surface(
                                     modifier = Modifier
@@ -1895,11 +1865,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             // Sort members alphabetically by name
                             val sortedMembers = members.sortedBy { it.name }
                             sortedMembers.forEach { member ->
-                                val membershipId = if (member.id == viewModel.currentUserMemberId) {
-                                    appSettings.membershipNo
-                                } else {
-                                    "LS-2023-${String.format(Locale.US, "%03d", member.id)}"
-                                }
+                                val membershipId = member.membershipNo.ifBlank { "N/A" }
 
                                 val escapedName = escapeCsv(member.name)
                                 val escapedEmail = escapeCsv(member.email)
