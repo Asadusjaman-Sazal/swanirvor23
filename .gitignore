@@ -3,6 +3,7 @@
 .gradle/
 build/
 **/build/
+release/
 
 # Kotlin compiler files
 .kotlin/
@@ -36,3 +37,4 @@ ongoing_fixes.txt
 
 +++ .gitignore
 ```
+/app/release

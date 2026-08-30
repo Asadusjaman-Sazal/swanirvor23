@@ -72,6 +72,9 @@ fun MembersScreen(viewModel: SavingsViewModel) {
     // Collect all savings to filter and show history for selected member
     val allSavings by viewModel.allSavings.collectAsStateWithLifecycle()
 
+    // Comment: Grand Total is computed from each member's already-derived totalSavings, so no new stored field or schema change is needed
+    val grandTotal = filteredMembers.sumOf { it.totalSavings }
+
     // State to hold the currently selected member for showing their savings history
     var selectedMemberForHistory by remember { mutableStateOf<Member?>(null) }
     var selectedMemberForImage by remember { mutableStateOf<Member?>(null) }
@@ -197,6 +200,39 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                         }
                     }
                 }
+            }
+        }
+
+        // Grand Total section: sits right under the last member's Total Savings
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("grand_total_section"),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)), // Soft light green to set it apart
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFFDCFCE7))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Grand Total=",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF166534)
+                    )
+                )
+                Text(
+                    text = String.format(Locale.US, "%,.0f৳", grandTotal),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF166534)
+                    )
+                )
             }
         }
     }

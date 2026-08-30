@@ -1,4 +1,4 @@
-Current Version: 1.0.13
+Current Version: 1.0.14
 -----------------------
 
 Version History:
@@ -83,3 +83,4 @@ Version: 1.0.10 - Fixed Admin Panel This Week's Payment to classify payments by 
 Version: 1.0.11 - Restored profile image URLs from the remote member record after local app data reset and login.
 Version: 1.0.12 - Updated Personal Dashboard warning and congratulations cards to classify payments by the selected contribution date.
 Version: 1.0.13 - Updated Sign Up mobile number input to use the immutable +88 prefix and allow 11 editable digits.
+Version: 1.0.14 - Added a Grand Total section to the Members Dashboard showing the sum of all members' savings, with a light green background to distinguish it.
