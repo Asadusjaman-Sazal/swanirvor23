@@ -210,9 +210,11 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("grand_total_section"),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFBBF7D0)), // More saturated green to set it apart
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+                        ),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF22C55E))
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
                         Row(
                             modifier = Modifier
@@ -221,18 +223,29 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Grand Total=",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF15803D)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountBalance,
+                                    contentDescription = "Grand Total",
+                                    tint = Color(0xFF0C9488),
+                                    modifier = Modifier.size(22.dp)
                                 )
-                            )
+                                Text(
+                                    text = "Grand Total",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                )
+                            }
                             Text(
                                 text = String.format(Locale.US, "%,.0f৳", grandTotal),
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF15803D)
+                                    color = Color(0xFF0C9488)
                                 )
                             )
                         }
@@ -243,9 +256,11 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("projected_grand_total_section"),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+                        ),
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFF86EFAC))
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
                         Row(
                             modifier = Modifier
@@ -254,18 +269,29 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "Projected Grand Total=",
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF166534)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Savings,
+                                    contentDescription = "Projected Grand Total",
+                                    tint = Color(0xFF15803D),
+                                    modifier = Modifier.size(22.dp)
                                 )
-                            )
+                                Text(
+                                    text = "Projected Grand Total",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                )
+                            }
                             Text(
                                 text = String.format(Locale.US, "%,.0f৳", projectedGrandTotal),
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF166534)
+                                    color = Color(0xFF15803D)
                                 )
                             )
                         }

@@ -1,4 +1,4 @@
-Current Version: 1.0.19
+Current Version: 1.0.21
 -----------------------
 
 Version History:
@@ -89,3 +89,5 @@ Version: 1.0.16 - Added "Total Due" and "Total Projected Savings" cards to each 
 Version: 1.0.17 - Resolved 4 deprecation warnings: replaced no-arg menuAnchor() with MenuAnchorType.PrimaryNotEditable in Admin and Settings dropdowns, and switched TrendingUp and ExitToApp icons to their AutoMirrored variants.
 Version: 1.0.18 - Moved Members Dashboard Grand Total into the scrolled member list (after the last member), made its green more saturated, and added a "Projected Grand Total" card summing all members' projected savings.
 Version: 1.0.19 - Sorted the Admin Panel "Select Member" dropdown items alphabetically by member name.
+Version: 1.0.20 - Restyled the Members Dashboard Grand Total and Projected Grand Total cards to match the app's neutral card theme (white/dark surface, subtle border, teal/green icon + value accent) for a cleaner, more professional look.
+Version: 1.0.21 - Report & Export: replaced "Last Month" with "Last Week" (previous Sun–Sat cycle) placed after "This Week"; fixed PDF/CSV exports injecting placeholder Membership No. by using each member's real profile Membership No.
