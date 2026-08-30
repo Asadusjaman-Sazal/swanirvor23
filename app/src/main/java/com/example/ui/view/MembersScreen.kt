@@ -380,7 +380,7 @@ fun MemberSavingsHistoryDialog(
                             horizontalAlignment = Alignment.Start
                         ) {
                             Text(
-                                text = "This Month",
+                                text = "This Month's Savings",
                                 style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFF0369A1))
                             )
                             Spacer(modifier = Modifier.height(4.dp))
