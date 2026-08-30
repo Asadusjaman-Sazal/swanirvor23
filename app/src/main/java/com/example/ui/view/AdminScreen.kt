@@ -880,7 +880,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showMemberDropdown) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .menuAnchor()
+                                .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true)
                                 .testTag("select_member_input"),
                             shape = RoundedCornerShape(8.dp)
                         )
@@ -888,7 +888,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             expanded = showMemberDropdown,
                             onDismissRequest = { showMemberDropdown = false }
                         ) {
-                            members.forEach { m ->
+                            members.sortedBy { it.name }.forEach { m ->
                                 DropdownMenuItem(
                                     text = { Text(m.name) },
                                     onClick = {
