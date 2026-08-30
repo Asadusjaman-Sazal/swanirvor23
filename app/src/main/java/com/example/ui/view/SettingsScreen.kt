@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -301,7 +302,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showNotificationDayDropdown) },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .menuAnchor(),
+                                    .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true),
                                 shape = RoundedCornerShape(8.dp)
                             )
                             ExposedDropdownMenu(
@@ -587,7 +588,7 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(imageVector = Icons.Default.ExitToApp, contentDescription = "Sign Out")
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Sign Out")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Sign Out of Swanirvor-23", fontWeight = FontWeight.Bold)
                     }
