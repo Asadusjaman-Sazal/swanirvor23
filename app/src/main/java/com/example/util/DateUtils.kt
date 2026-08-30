@@ -110,6 +110,20 @@ fun getCurrentCycleRange(): Pair<Long, Long> {
     return Pair(sundayCal.timeInMillis, saturdayCal.timeInMillis)
 }
 
+// The savings community began on Sunday, 29 March 2026 — the first Sun→Sat cycle starts here.
+private val COMMUNITY_START_MILLIS: Long = Calendar.getInstance().apply {
+    set(2026, Calendar.MARCH, 29, 0, 0, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+// Comment: Count how many savings cycles (Sun→Sat weeks) have elapsed from the community start up to and including the current active cycle. Used for "Total Due" and "Total Projected Savings" on the Personal Dashboard.
+fun getElapsedCycleCount(): Int {
+    val (currentSunday, _) = getCurrentCycleRange()
+    val weeksSinceStart = ((currentSunday - COMMUNITY_START_MILLIS) / (7L * 24 * 60 * 60 * 1000)).toInt()
+    // Comment: Add 1 so the starting cycle itself is counted (week 0 since start === cycle 1), and never return less than 1.
+    return maxOf(1, weeksSinceStart + 1)
+}
+
 // Calculate days remaining and formatted info for the upcoming Thursday
 fun calculateNextThursday(): NextThursdayInfo {
     val cal = Calendar.getInstance()

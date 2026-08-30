@@ -57,6 +57,7 @@ import com.example.util.calculateNextThursday
 import com.example.util.formatToDdMmYyyy
 import com.example.util.getCurrentCycleRange
 import com.example.util.getPreviousCycleRange
+import com.example.util.getElapsedCycleCount
 import com.example.util.isCurrentMonth
 import com.example.util.parseDateTextToMillis
 import java.text.SimpleDateFormat
@@ -104,6 +105,15 @@ fun HomeScreen(viewModel: SavingsViewModel) {
     val userPaidCurrentActiveCycle = savingsList.any { s ->
         parseDateTextToMillis(s.dateText) in activeCycleStartsMillis..activeCycleEndsMillis
     }
+
+    // Comment: Derive Personal Dashboard totals from the elapsed savings cycles and the Weekly Savings Goal.
+    // Cycle count uses the same Sun→Sat cycle the Admin Panel "This Week's Payment" uses (community started Sun, 29 Mar 2026).
+    val weeklyGoal = appSettings.personalGoal
+    val elapsedCycles = getElapsedCycleCount()
+    // Comment: Total Due = (cycles elapsed × weekly goal) − total savings already deposited.
+    val totalDue = maxOf(0.0, (elapsedCycles * weeklyGoal) - displayTotal)
+    // Comment: Total Projected Savings = cycles elapsed × weekly goal (the full amount expected by now).
+    val totalProjected = elapsedCycles * weeklyGoal
 
     var editingSavings by remember { mutableStateOf<Savings?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Savings?>(null) }
@@ -255,6 +265,126 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                             )
                         )
                     }
+                }
+            }
+        }
+
+        // Bento Card: Total Due (cycles elapsed × weekly goal − total savings), shown under Total Savings
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("total_due_card"),
+            colors = CardDefaults.cardColors(
+                containerColor = if (appSettings.isDarkMode) Color(0xFF2A1A1A) else Color(0xFFFEF2F2)
+            ),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Color(0xFFFECACA))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TOTAL DUE",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                letterSpacing = 1.2.sp
+                            )
+                        )
+                        Icon(
+                            imageVector = Icons.Default.AccountBalanceWallet,
+                            contentDescription = "Total Due",
+                            tint = Color(0xFFEF4444),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Text(
+                        text = String.format(Locale.US, "%,.0f৳", totalDue),
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFEF4444),
+                            fontSize = 32.sp
+                        )
+                    )
+
+                    Text(
+                        text = "$elapsedCycles ${if (elapsedCycles == 1) "week" else "weeks"} × ${weeklyGoal.toInt()}৳ − ${displayTotal.toInt()}৳",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                }
+            }
+        }
+
+        // Bento Card: Total Projected Savings (cycles elapsed × weekly goal), shown under Total Due
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("total_projected_card"),
+            colors = CardDefaults.cardColors(
+                containerColor = if (appSettings.isDarkMode) Color(0xFF13211B) else Color(0xFFF0FDF4)
+            ),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, Color(0xFFBBF7D0))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TOTAL PROJECTED SAVINGS",
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                letterSpacing = 1.2.sp
+                            )
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Savings,
+                            contentDescription = "Total Projected Savings",
+                            tint = Color(0xFF16A34A),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Text(
+                        text = String.format(Locale.US, "%,.0f৳", totalProjected),
+                        style = MaterialTheme.typography.headlineLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF16A34A),
+                            fontSize = 32.sp
+                        )
+                    )
+
+                    Text(
+                        text = "$elapsedCycles ${if (elapsedCycles == 1) "week" else "weeks"} × ${weeklyGoal.toInt()}৳",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
                 }
             }
         }

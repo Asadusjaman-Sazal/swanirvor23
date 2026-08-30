@@ -4,6 +4,7 @@
 build/
 **/build/
 release/
+**/release/
 
 # Kotlin compiler files
 .kotlin/
