@@ -56,6 +56,7 @@ import com.example.data.model.Savings
 import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.formatToDdMmYyyy
 import com.example.util.isCurrentMonth
+import com.example.util.getElapsedCycleCount
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -246,6 +247,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
         MemberSavingsHistoryDialog(
             member = member,
             savingsList = memberSavings,
+            appSettings = appSettings,
             onDismiss = { selectedMemberForHistory = null }
         )
     }
@@ -266,6 +268,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
 fun MemberSavingsHistoryDialog(
     member: Member,
     savingsList: List<Savings>,
+    appSettings: AppSettings,
     onDismiss: () -> Unit
 ) {
     var showLargeProfileImage by remember { mutableStateOf(false) }
@@ -274,6 +277,12 @@ fun MemberSavingsHistoryDialog(
     val currentMonthSavingsTotal = savingsList
         .filter { isCurrentMonth(it.dateText) }
         .sumOf { it.amount }
+
+    // Comment: Per-member due/projected use the same cycle count and Weekly Savings Goal as the Personal Dashboard (community started Sun, 29 Mar 2026).
+    val memberWeeklyGoal = appSettings.personalGoal
+    val memberElapsedCycles = getElapsedCycleCount()
+    val memberTotalDue = maxOf(0.0, (memberElapsedCycles * memberWeeklyGoal) - member.totalSavings)
+    val memberTotalProjected = memberElapsedCycles * memberWeeklyGoal
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -388,6 +397,58 @@ fun MemberSavingsHistoryDialog(
                             Text(
                                 text = String.format(Locale.US, "%,.0f৳", currentMonthSavingsTotal),
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color(0xFF075985))
+                            )
+                        }
+                    }
+                }
+
+                // Second row of summary cards: Total Due and Total Projected Savings
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Total Due Summary Card
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)), // Soft light red
+                        border = BorderStroke(1.dp, Color(0xFFFECACA))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Text(
+                                text = "Total Due",
+                                style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB91C1C))
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            // Display formatted total due as an integer value per user preference
+                            Text(
+                                text = String.format(Locale.US, "%,.0f৳", memberTotalDue),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
+                            )
+                        }
+                    }
+
+                    // Total Projected Savings Summary Card
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F3FF)), // Soft light purple
+                        border = BorderStroke(1.dp, Color(0xFFEDE9FE))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Text(
+                                text = "Projected Savings",
+                                style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFF6D28D9))
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            // Display formatted projected savings as an integer value per user preference
+                            Text(
+                                text = String.format(Locale.US, "%,.0f৳", memberTotalProjected),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color(0xFF7C3AED))
                             )
                         }
                     }
