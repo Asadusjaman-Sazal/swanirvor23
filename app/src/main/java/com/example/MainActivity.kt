@@ -45,6 +45,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.example.data.SupabaseClient.init(applicationContext)
+        // Comment: Keep the daily background update check enqueued. WorkManager (not a polling loop)
+        // owns the cadence, so this call is idempotent and costs nothing on repeat launches.
+        com.example.data.UpdateCheckScheduler.scheduleDailyCheck(applicationContext)
         enableEdgeToEdge()
         setContent {
             val viewModel: SavingsViewModel = viewModel()

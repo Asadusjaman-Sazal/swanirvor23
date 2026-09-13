@@ -155,6 +155,9 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
+    // Comment: WorkManager owns the daily background app-update check (CoroutineWorker lives in the
+    // plain work-runtime artifact since 2.9, so the empty work-runtime-ktx artifact is not needed).
+    implementation(libs.androidx.work.runtime)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
