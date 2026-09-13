@@ -1,4 +1,4 @@
-Current Version: 1.0.27
+Current Version: 1.0.28
 -----------------------
 
 Version History:
@@ -97,3 +97,4 @@ Version: 1.0.24 - Added a collapsible "App Update" section to Settings with a Ch
 Version: 1.0.25 - Added a scheduled daily background update check (WorkManager periodic work, network-constrained and event-driven rather than a polling loop) that posts a notification only when a newer published release exists and, when tapped, opens Settings > App Update with that section already expanded.
 Version: 1.0.26 - Fixed the tag-triggered release workflow failing with exit code 126: gradlew was committed as a non-executable file (100644) from a Windows checkout, so the Linux runner could not run ./gradlew; the wrapper is now tracked with the executable bit set so the tag build can run it.
 Version: 1.0.27 - Made the release workflow chmod +x gradlew before the build, because the Windows checkout kept committing the wrapper as mode 100644 (dropping the earlier mode change), and re-applied the executable bit to the tracked wrapper so Linux and macOS clones can run ./gradlew directly.
+Version: 1.0.28 - Fixed the "Update check failed (HTTP 403)" error by dropping the rate-limited GitHub REST API from the in-app update check: it now resolves the newest release tag from the public /releases/latest redirect (a body-less HEAD request, so the 200 KB tag page is never downloaded), reads the release notes from the small releases Atom feed, and derives the APK download URL from the tag itself. The anonymous API quota is 60 requests per hour shared by every device behind the same carrier IP, which is what caused the 403.
