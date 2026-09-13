@@ -541,6 +541,15 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
             }
         }
 
+        // --- App Update SECTION ---
+        // Comment: Collapsible update section that checks the published GitHub release and installs
+        // a newer APK, keeping the single-open-accordion behaviour of the other Settings sections.
+        AppUpdateSection(
+            isOpen = settingsOpenSection == "update",
+            onToggle = { toggleSettingsSection("update") },
+            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+        )
+
         // Comment: Secure Sign Out button allowing users to safely log out and terminate their session
         Card(
             modifier = Modifier.fillMaxWidth(),

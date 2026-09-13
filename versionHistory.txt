@@ -1,4 +1,4 @@
-Current Version: 1.0.23
+Current Version: 1.0.24
 -----------------------
 
 Version History:
@@ -93,3 +93,4 @@ Version: 1.0.20 - Restyled the Members Dashboard Grand Total and Projected Grand
 Version: 1.0.21 - Report & Export: replaced "Last Month" with "Last Week" (previous Sun–Sat cycle) placed after "This Week"; fixed PDF/CSV exports injecting placeholder Membership No. by using each member's real profile Membership No.
 Version: 1.0.22 - Fixed members resurrecting after deletion: the sync now deletes the remote members row for Approved RemoveMember requests (using the "Admins can delete all members" RLS policy), guards the member re-pull so deleted members never re-appear locally, and triggers an immediate sync after the final admin's confirmation so the removal propagates to all devices.
 Version: 1.0.23 - Reworked member removal into a soft-delete (status = "Removed") so the ON DELETE CASCADE no longer wipes the member's change_requests: removal now propagates to every device, removed members are filtered from fetches, never re-pushed or re-pulled, and removed users are blocked from signing back in.
+Version: 1.0.24 - Added a collapsible "App Update" section to Settings with a Check for Update button that reads the latest GitHub release, compares it with the installed build version, and downloads plus installs a newer APK in-app (allowing "Install unknown apps" on Android 8+); added a tag-triggered GitHub Actions workflow that verifies the tag against versionHistory.txt, builds the signed release APK, and publishes it as a GitHub Release.
