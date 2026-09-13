@@ -1,4 +1,4 @@
-Current Version: 1.0.26
+Current Version: 1.0.27
 -----------------------
 
 Version History:
@@ -96,3 +96,4 @@ Version: 1.0.23 - Reworked member removal into a soft-delete (status = "Removed"
 Version: 1.0.24 - Added a collapsible "App Update" section to Settings with a Check for Update button that reads the latest GitHub release, compares it with the installed build version, and downloads plus installs a newer APK in-app (allowing "Install unknown apps" on Android 8+); added a tag-triggered GitHub Actions workflow that verifies the tag against versionHistory.txt, builds the signed release APK, and publishes it as a GitHub Release.
 Version: 1.0.25 - Added a scheduled daily background update check (WorkManager periodic work, network-constrained and event-driven rather than a polling loop) that posts a notification only when a newer published release exists and, when tapped, opens Settings > App Update with that section already expanded.
 Version: 1.0.26 - Fixed the tag-triggered release workflow failing with exit code 126: gradlew was committed as a non-executable file (100644) from a Windows checkout, so the Linux runner could not run ./gradlew; the wrapper is now tracked with the executable bit set so the tag build can run it.
+Version: 1.0.27 - Made the release workflow chmod +x gradlew before the build, because the Windows checkout kept committing the wrapper as mode 100644 (dropping the earlier mode change), and re-applied the executable bit to the tracked wrapper so Linux and macOS clones can run ./gradlew directly.
