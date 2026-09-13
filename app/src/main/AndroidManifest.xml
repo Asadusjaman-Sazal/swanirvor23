@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Comment: Required by WorkManager to evaluate the network constraint on the daily update check -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Comment: Required on Android 8+ so Settings > App Update can hand a downloaded APK to the
          system package installer. The user still has to allow "Install unknown apps" for this app. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

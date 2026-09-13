@@ -62,7 +62,7 @@ import java.util.*
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SavingsViewModel) {
+fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = null) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -80,6 +80,14 @@ fun SettingsScreen(viewModel: SavingsViewModel) {
 
     // Comment: Track the single open Settings accordion section (null = all closed); only one can be open at a time
     var settingsOpenSection by remember { mutableStateOf<String?>(null) }
+
+    // Comment: Open the section a notification tap asked for (Settings > App Update). The key only
+    // changes when a new request arrives, so the user's own accordion choice is never overridden.
+    LaunchedEffect(initialOpenSection) {
+        if (initialOpenSection != null) {
+            settingsOpenSection = initialOpenSection
+        }
+    }
 
     // Comment: Toggle the given Settings section, closing it again if it is already open
     fun toggleSettingsSection(section: String) {

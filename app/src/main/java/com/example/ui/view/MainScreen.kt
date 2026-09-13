@@ -276,6 +276,9 @@ fun MainScreen(viewModel: SavingsViewModel) {
 @Composable
 fun MainAppContent(viewModel: SavingsViewModel) {
     var activeTab by remember { mutableStateOf(AppTab.Home) }
+
+    // Comment: Settings accordion a notification tap asked to open (e.g. App Update), handed down to SettingsScreen
+    var requestedSettingsSection by remember { mutableStateOf<String?>(null) }
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -349,6 +352,21 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                     viewModel.clearPendingNavigation()
                 }
             }
+            // Comment: An app-update notification opens Settings with the App Update section expanded,
+            // so a discovered update can be installed without hunting through the Settings list
+            if (route == "app_update") {
+                requestedSettingsSection = "update"
+                activeTab = AppTab.Settings
+                viewModel.clearPendingNavigation()
+            }
+        }
+    }
+
+    // Comment: Drop the requested Settings section once the user leaves the Settings tab, so coming back
+    // to Settings later does not keep forcing the same accordion open
+    LaunchedEffect(activeTab) {
+        if (activeTab != AppTab.Settings) {
+            requestedSettingsSection = null
         }
     }
 
@@ -492,7 +510,10 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                         HomeScreen(viewModel = viewModel)
                     }
                 }
-                AppTab.Settings -> SettingsScreen(viewModel = viewModel)
+                AppTab.Settings -> SettingsScreen(
+                    viewModel = viewModel,
+                    initialOpenSection = requestedSettingsSection
+                )
             }
         }
     }

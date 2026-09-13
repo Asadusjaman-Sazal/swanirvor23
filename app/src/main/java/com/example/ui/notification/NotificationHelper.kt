@@ -357,6 +357,75 @@ object AdminNotificationHelper {
 }
 
 /**
+ * UpdateNotificationHelper posts the daily background "a newer version is available" alert. It follows
+ * the same channel and large-icon style as the other app notifications, and tapping it opens
+ * Settings > App Update so the user can install the release without hunting for it.
+ */
+object UpdateNotificationHelper {
+    private const val TAG = "UpdateNotification"
+    private const val CHANNEL_ID = "app_update_channel"
+    private const val NOTIFICATION_ID = 1005
+
+    // Comment: Post the update alert for the release version reported by the GitHub release
+    fun showUpdateAvailableNotification(context: Context, version: String) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // Set up a standard importance channel for update alerts on API 26+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "App Updates",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "Notifies when a newer version of the app is available"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            // Comment: Route the tap to Settings > App Update. Use a notification-specific request code
+            // so this PendingIntent cannot be clobbered by the other notifications' navigate_to extras.
+            val openIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("navigate_to", "app_update")
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                NOTIFICATION_ID,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val title = "App Update Available"
+            val text = "Swanirvor-23 $version is ready to install. Tap to open App Update."
+
+            // Load large icon bitmap (colored logo) for status bar/drawer notifications
+            val largeIcon = getBitmapFromDrawable(context, R.drawable.ic_favicon_placeholder)
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification_small) // Monochrome transparent silhouette
+                .apply {
+                    if (largeIcon != null) {
+                        setLargeIcon(largeIcon)
+                    }
+                }
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+            notificationManager.notify(NOTIFICATION_ID, notification)
+            Log.d(TAG, "Posted the app update notification for version $version")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to post the app update notification", e)
+        }
+    }
+}
+
+/**
  * Safely converts any vector or raster drawable resource into a Bitmap for use as a notification large icon.
  */
 private fun getBitmapFromDrawable(context: Context, drawableResId: Int): Bitmap? {
