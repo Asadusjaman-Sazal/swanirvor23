@@ -84,7 +84,13 @@ jobs:
           fi
 
       - name: Build the signed release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: |
+          # Comment: This repo is maintained from a Windows checkout, where Git does not track the
+          # executable bit (core.fileMode=false), so gradlew is committed as mode 100644 and a fresh
+          # clone here on Linux cannot run it (the shell exits 126, "Permission denied"). Grant the
+          # bit at build time (idempotent) so the release no longer depends on the committed mode.
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload the APK as a build artifact
         uses: actions/upload-artifact@v4
