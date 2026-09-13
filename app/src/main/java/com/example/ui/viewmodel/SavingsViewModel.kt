@@ -555,6 +555,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                             status = "Approved"
                         )
                     )
+                    // Comment: Sync immediately so the Approved removal is pushed to Supabase and the
+                    // member's status is set to "Removed" remotely — propagating the removal to all devices
+                    repository.syncWithSupabase()
                 } else {
                     // Update confirmation list, but keep status as Pending
                     repository.updateChangeRequest(
@@ -753,10 +756,18 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 val assignedRole = determineRoleForNewUser()
                 var remoteMember: Member? = null
                 try {
-                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
+                    // Comment: Include removed members so a removed account cannot sign back in and be re-created
+                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers(includeRemoved = true)
                     remoteMember = remoteMembers.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
                 } catch (e: Exception) {
                     android.util.Log.w("SavingsViewModel", "Failed to fetch remote members from Supabase: ${e.localizedMessage}")
+                }
+
+                // Comment: Block the recovery flow for an account that was removed by an admin
+                if (remoteMember != null && remoteMember.status == Constants.REMOVED_STATUS) {
+                    _googleLoginLoading.value = false
+                    _googleLoginError.value = "Your account has been removed. Please contact Admin."
+                    return@launch
                 }
 
                 if (remoteMember != null) {
@@ -846,10 +857,17 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 // Let's check if the member already exists in the remote database first
                 var remoteMember: Member? = null
                 try {
-                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
+                    // Comment: Include removed members so a removed account cannot sign back in and be re-created
+                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers(includeRemoved = true)
                     remoteMember = remoteMembers.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
                 } catch (e: Exception) {
                     android.util.Log.w("SavingsViewModel", "Failed to fetch remote members from Supabase: ${e.localizedMessage}")
+                }
+
+                // Comment: Block sign-in for an account that was removed by an admin
+                if (remoteMember != null && remoteMember.status == Constants.REMOVED_STATUS) {
+                    onResult(false, "Your account has been removed. Please contact Admin.")
+                    return@launch
                 }
 
                 if (remoteMember != null) {
@@ -1018,10 +1036,18 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 // Let's check if the member already exists in the remote database first
                 var remoteMember: Member? = null
                 try {
-                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
+                    // Comment: Include removed members so a removed account cannot sign back in and be re-created
+                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers(includeRemoved = true)
                     remoteMember = remoteMembers.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
                 } catch (e: Exception) {
                     android.util.Log.w("SavingsViewModel", "Failed to fetch remote members from Supabase: ${e.localizedMessage}")
+                }
+
+                // Comment: Block sign-in for an account that was removed by an admin
+                if (remoteMember != null && remoteMember.status == Constants.REMOVED_STATUS) {
+                    _googleLoginLoading.value = false
+                    _googleLoginError.value = "Your account has been removed. Please contact Admin."
+                    return@launch
                 }
 
                 if (remoteMember != null) {

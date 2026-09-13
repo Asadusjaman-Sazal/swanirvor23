@@ -36,3 +36,4 @@ ongoing_fixes.txt
 
 # Release build outputs
 app/release/
+/app/release
