@@ -77,9 +77,10 @@ class SavingsRepository(
 
     suspend fun deleteMember(member: Member) = withContext(Dispatchers.IO) {
         memberDao.deleteMember(member)
-        // Comment: Securely delete the member profile from Supabase remote database table if user is authenticated
+        // Comment: Soft-delete on the remote (status = "Removed") instead of a hard DELETE, so the member's
+        // change_requests rows are not cascade-deleted and the approved removal can propagate to every device.
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
-            com.example.data.SupabaseClient.dbDeleteMember(member)
+            com.example.data.SupabaseClient.dbSoftDeleteMember(member)
         }
     }
 
@@ -324,7 +325,10 @@ class SavingsRepository(
                             "RemoveMember" -> {
                                 val localMember = memberDao.getMemberById(req.memberId)
                                 if (localMember != null) {
-                                    // Comment: Remove the member locally since their removal was approved by the admin
+                                    // Comment: Soft-delete remotely FIRST (status = "Removed") so the removal propagates
+                                    // to every device, then remove it locally. Order matters — once deleted locally we
+                                    // would no longer have the row to soft-delete remotely.
+                                    com.example.data.SupabaseClient.dbSoftDeleteMember(localMember)
                                     memberDao.deleteMember(localMember)
                                 }
                             }
@@ -350,12 +354,33 @@ class SavingsRepository(
             }
 
             // --- 1. Sync Members ---
-            val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers()
+            // Comment: Fetch ALL members including soft-deleted ones (status = "Removed") so this device can
+            // detect removals approved elsewhere and apply them locally.
+            val allRemoteMembers = com.example.data.SupabaseClient.dbFetchMembers(includeRemoved = true)
             val localMembers = memberDao.getAllMembersDirect()
 
-            // Filter out seed members
-            val filteredRemoteMembers = remoteMembers.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
+            // Comment: Emails remotely marked "Removed" — these must be purged locally and never re-pushed
+            val removedRemoteEmails = allRemoteMembers
+                .filter { it.status == Constants.REMOVED_STATUS }
+                .map { it.email.trim().lowercase() }
+                .toSet()
+
+            // Filter out seed members and remotely-removed members from the active remote set
+            val filteredRemoteMembers = allRemoteMembers.filter {
+                it.email.trim().lowercase() !in Constants.SEED_EMAILS && it.status != Constants.REMOVED_STATUS
+            }
             val filteredLocalMembers = localMembers.filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
+
+            // Comment: Purge local members whose removal was approved on Supabase (runs before the push loop so
+            // a removed member is never re-pushed back to Supabase)
+            for (localMember in filteredLocalMembers) {
+                if (localMember.email.trim().lowercase() in removedRemoteEmails) {
+                    memberDao.deleteMember(localMember)
+                }
+            }
+            // Re-read local members after the purge so the push/pull loops work on the current set
+            val localMembersAfterPurge = memberDao.getAllMembersDirect()
+                .filter { it.email.trim().lowercase() !in Constants.SEED_EMAILS }
 
             // Create remote mapping by email
             val remoteByEmail = filteredRemoteMembers.associateBy { it.email.trim().lowercase() }
@@ -364,7 +389,7 @@ class SavingsRepository(
             // Track IDs we insert/keep locally
             val deDuplicatedIds = mutableSetOf<Int>()
 
-            for (localMember in filteredLocalMembers) {
+            for (localMember in localMembersAfterPurge) {
                 val emailKey = localMember.email.trim().lowercase()
                 val remoteMember = remoteByEmail[emailKey]
 

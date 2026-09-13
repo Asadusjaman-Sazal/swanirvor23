@@ -7,6 +7,9 @@ object Constants {
     const val DEEP_LINK_SCHEME = "swanirvor23"
     const val MIN_PASSWORD_LENGTH = 8
 
+    // Comment: Members marked with this status are soft-deleted — kept in the database/tables but excluded from all UI and syncs
+    const val REMOVED_STATUS = "Removed"
+
     // Comment: Seed demo accounts are excluded from the real member/savings views.
     val SEED_EMAILS = setOf(
         "sarah.j@example.com",

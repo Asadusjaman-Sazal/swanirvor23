@@ -1,4 +1,4 @@
-Current Version: 1.0.21
+Current Version: 1.0.23
 -----------------------
 
 Version History:
@@ -91,3 +91,5 @@ Version: 1.0.18 - Moved Members Dashboard Grand Total into the scrolled member l
 Version: 1.0.19 - Sorted the Admin Panel "Select Member" dropdown items alphabetically by member name.
 Version: 1.0.20 - Restyled the Members Dashboard Grand Total and Projected Grand Total cards to match the app's neutral card theme (white/dark surface, subtle border, teal/green icon + value accent) for a cleaner, more professional look.
 Version: 1.0.21 - Report & Export: replaced "Last Month" with "Last Week" (previous Sun–Sat cycle) placed after "This Week"; fixed PDF/CSV exports injecting placeholder Membership No. by using each member's real profile Membership No.
+Version: 1.0.22 - Fixed members resurrecting after deletion: the sync now deletes the remote members row for Approved RemoveMember requests (using the "Admins can delete all members" RLS policy), guards the member re-pull so deleted members never re-appear locally, and triggers an immediate sync after the final admin's confirmation so the removal propagates to all devices.
+Version: 1.0.23 - Reworked member removal into a soft-delete (status = "Removed") so the ON DELETE CASCADE no longer wipes the member's change_requests: removal now propagates to every device, removed members are filtered from fetches, never re-pushed or re-pulled, and removed users are blocked from signing back in.

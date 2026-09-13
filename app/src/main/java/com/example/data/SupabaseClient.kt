@@ -14,6 +14,7 @@ import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.AppSettings
 import com.example.data.model.ChangeRequest
+import com.example.util.Constants
 
 /**
  * Utility client to connect Swanirvor-23 to Supabase Auth REST API.
@@ -603,14 +604,17 @@ object SupabaseClient {
         )
     }
 
-    // Comment: Fetch all Members from remote database table
-    suspend fun dbFetchMembers(): List<Member> {
+    // Comment: Fetch Members from remote. Removed members (status = "Removed") are excluded by default so a
+    // removed user is never re-added (e.g. on login). Pass includeRemoved = true in the sync to detect removals.
+    suspend fun dbFetchMembers(includeRemoved: Boolean = false): List<Member> {
         val jsonStr = performRequest("GET", "members", "select=*") ?: return emptyList()
         val list = mutableListOf<Member>()
         try {
             val arr = org.json.JSONArray(jsonStr)
             for (i in 0 until arr.length()) {
-                list.add(jsonToMember(arr.getJSONObject(i)))
+                val member = jsonToMember(arr.getJSONObject(i))
+                if (!includeRemoved && member.status == Constants.REMOVED_STATUS) continue
+                list.add(member)
             }
         } catch (e: Exception) {
             Log.e("SupabaseDb", "Error parsing members response", e)
@@ -679,11 +683,16 @@ object SupabaseClient {
         return jsonStr != null
     }
 
-    // Comment: Delete an existing Member row from remote database table
-    suspend fun dbDeleteMember(member: Member): Boolean {
+    // Comment: Soft-delete a Member by marking status = "Removed" instead of hard-deleting the row.
+    // A hard DELETE would cascade through change_requests.member_id (ON DELETE CASCADE) and erase the
+    // member's change requests, so the approved removal could never propagate to other devices.
+    suspend fun dbSoftDeleteMember(member: Member): Boolean {
+        val bodyObj = JSONObject().apply {
+            put("status", Constants.REMOVED_STATUS)
+        }
         // Comment: URL-encode the email so values with reserved characters (+ , space) do not break the filter
         val encodedEmail = java.net.URLEncoder.encode(member.email, "UTF-8")
-        val jsonStr = performRequest("DELETE", "members", "email=eq.$encodedEmail")
+        val jsonStr = performRequest("PATCH", "members", "email=eq.$encodedEmail", bodyObj.toString())
         return jsonStr != null
     }
 
