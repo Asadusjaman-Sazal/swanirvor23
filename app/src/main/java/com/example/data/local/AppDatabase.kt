@@ -10,17 +10,19 @@ import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
+import com.example.data.model.BankDeposit
 
 /**
  * Room Database holder for the Swanirvor-23 application.
  * Manages tables for members, individual savings contributions, and app settings.
  */
-@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class], version = 10, exportSchema = false)
+@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class], version = 11, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun memberDao(): MemberDao
     abstract fun savingsDao(): SavingsDao
     abstract fun appSettingsDao(): AppSettingsDao
     abstract fun changeRequestDao(): ChangeRequestDao
+    abstract fun bankDepositDao(): BankDepositDao
 
     companion object {
         @Volatile
@@ -36,7 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lexsave_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                 .build()
                 INSTANCE = instance
                 instance
@@ -79,6 +81,16 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_9_10 = object : Migration(9, 10) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `members` ADD COLUMN `mobileNo` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        // Comment: Migrate Room database from version 10 to 11 by adding the bank deposit ledger table.
+        // This ledger is separate from savings so "Cash in Hand" (collected minus banked) can be derived.
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bank_deposits` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `amount` REAL NOT NULL, `dateText` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `depositedById` INTEGER NOT NULL, `depositedByName` TEXT NOT NULL, `syncKey` TEXT NOT NULL)"
+                )
             }
         }
     }

@@ -4,10 +4,12 @@ import com.example.data.local.MemberDao
 import com.example.data.local.SavingsDao
 import com.example.data.local.AppSettingsDao
 import com.example.data.local.ChangeRequestDao
+import com.example.data.local.BankDepositDao
 import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
+import com.example.data.model.BankDeposit
 import com.example.util.Constants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -25,12 +27,14 @@ class SavingsRepository(
     private val memberDao: MemberDao,
     private val savingsDao: SavingsDao,
     private val appSettingsDao: AppSettingsDao,
-    private val changeRequestDao: ChangeRequestDao
+    private val changeRequestDao: ChangeRequestDao,
+    private val bankDepositDao: BankDepositDao
 ) {
     val allMembers: Flow<List<Member>> = memberDao.getAllMembers()
     val allSavings: Flow<List<Savings>> = savingsDao.getAllSavings()
     val appSettings: Flow<AppSettings?> = appSettingsDao.getSettingsFlow()
     val allChangeRequests: Flow<List<ChangeRequest>> = changeRequestDao.getAllChangeRequests()
+    val allBankDeposits: Flow<List<BankDeposit>> = bankDepositDao.getAllBankDeposits()
 
     fun getSavingsForMember(memberId: Int): Flow<List<Savings>> {
         return savingsDao.getSavingsForMember(memberId)
@@ -152,6 +156,46 @@ class SavingsRepository(
         // Comment: Sync savings contribution deletion to Supabase remote database table
         if (com.example.data.SupabaseClient.getAccessToken() != null) {
             com.example.data.SupabaseClient.dbDeleteSavings(effective)
+        }
+    }
+
+    suspend fun insertBankDeposit(deposit: BankDeposit) = withContext(Dispatchers.IO) {
+        // Comment: Assign a stable client-generated UUID match key to new entries so local and remote rows can be matched without relying on numeric IDs
+        val depositWithKey = if (deposit.syncKey.isBlank()) {
+            deposit.copy(syncKey = java.util.UUID.randomUUID().toString())
+        } else deposit
+        val localId = bankDepositDao.insertBankDeposit(depositWithKey).toInt()
+        val localDepositWithId = depositWithKey.copy(id = localId)
+        // Comment: Push the new bank deposit to the remote ledger (upserted on sync_key) so every device agrees on Cash in Hand
+        if (com.example.data.SupabaseClient.getAccessToken() != null) {
+            val inserted = com.example.data.SupabaseClient.dbUpsertBankDeposit(localDepositWithId)
+            if (inserted != null && inserted.id != localDepositWithId.id) {
+                // Comment: Atomically swap the local auto-increment row for the remote SERIAL row so a crash cannot leave a missing deposit
+                bankDepositDao.replaceBankDepositWithRemote(localDepositWithId, inserted)
+            }
+        }
+    }
+
+    suspend fun updateBankDeposit(deposit: BankDeposit) = withContext(Dispatchers.IO) {
+        // Comment: Preserve the row's stable sync key when callers pass a partially-populated BankDeposit
+        val existing = bankDepositDao.getBankDepositById(deposit.id)
+        val effective = deposit.copy(syncKey = deposit.syncKey.ifBlank { existing?.syncKey ?: java.util.UUID.randomUUID().toString() })
+        bankDepositDao.updateBankDeposit(effective)
+        // Comment: Sync the edited deposit to the remote ledger (upserted on sync_key)
+        if (com.example.data.SupabaseClient.getAccessToken() != null) {
+            com.example.data.SupabaseClient.dbUpsertBankDeposit(effective)
+        }
+    }
+
+    suspend fun deleteBankDeposit(deposit: BankDeposit) = withContext(Dispatchers.IO) {
+        // Comment: Resolve the row's stable sync key before deleting so the remote soft-delete
+        // targets the correct row even when the caller passed a partial BankDeposit object
+        val existing = bankDepositDao.getBankDepositById(deposit.id)
+        val effective = deposit.copy(syncKey = deposit.syncKey.ifBlank { existing?.syncKey ?: "" })
+        bankDepositDao.deleteBankDeposit(deposit)
+        // Comment: Sync the deposit deletion to the remote ledger as a soft-delete so it propagates to other devices
+        if (com.example.data.SupabaseClient.getAccessToken() != null) {
+            com.example.data.SupabaseClient.dbDeleteBankDeposit(effective)
         }
     }
 
@@ -454,6 +498,16 @@ class SavingsRepository(
                     }
                 }
 
+                // Comment: Propagate remapped member IDs to the bank ledger's depositor reference
+                val localDepositsList = bankDepositDao.getAllBankDepositsDirect()
+                for (d in localDepositsList) {
+                    val mappedId = memberIdMap[d.depositedById]
+                    if (mappedId != null) {
+                        bankDepositDao.deleteBankDeposit(d)
+                        bankDepositDao.insertBankDeposit(d.copy(depositedById = mappedId))
+                    }
+                }
+
                 val localRequestsList = changeRequestDao.getAllChangeRequestsDirect()
                 for (r in localRequestsList) {
                     val mappedId = memberIdMap[r.memberId]
@@ -523,6 +577,48 @@ class SavingsRepository(
                 if (remoteSaving.syncKey.isBlank()) continue
                 if (localSavingsByKey[remoteSaving.syncKey] == null) {
                     savingsDao.insertSavings(remoteSaving)
+                }
+            }
+
+            // --- 2b. Sync Bank Deposits ---
+            // Comment: Same stable sync_key matching and remote soft-delete handling as savings, so a deposit
+            // deleted on one device is never resurrected by another device's push
+            val remoteDeposits = com.example.data.SupabaseClient.dbFetchBankDeposits()
+            val localDeposits = bankDepositDao.getAllBankDepositsDirect()
+            val deletedDepositKeys = com.example.data.SupabaseClient.dbFetchDeletedBankDepositKeys()
+
+            val remoteDepositsByKey = remoteDeposits.associateBy { it.syncKey }
+            val localDepositsByKey = localDeposits.associateBy { it.syncKey }
+
+            // Push local deposits that are not in Supabase, dropping any that were soft-deleted remotely
+            for (localDeposit in localDeposits) {
+                if (localDeposit.syncKey.isBlank()) continue
+                if (localDeposit.syncKey in deletedDepositKeys) {
+                    bankDepositDao.deleteBankDeposit(localDeposit)
+                    continue
+                }
+                val remoteDeposit = remoteDepositsByKey[localDeposit.syncKey]
+                if (remoteDeposit == null) {
+                    // Push new bank deposit to remote (upserted on sync_key)
+                    val inserted = com.example.data.SupabaseClient.dbUpsertBankDeposit(localDeposit)
+                    if (inserted != null && inserted.id != localDeposit.id) {
+                        bankDepositDao.replaceBankDepositWithRemote(localDeposit, inserted)
+                    }
+                } else if (localDeposit != remoteDeposit) {
+                    // Remote is the source of truth; align the local row without leaving a duplicate when the IDs differ
+                    if (localDeposit.id != remoteDeposit.id) {
+                        bankDepositDao.replaceBankDepositWithRemote(localDeposit, remoteDeposit)
+                    } else {
+                        bankDepositDao.insertBankDeposit(remoteDeposit)
+                    }
+                }
+            }
+
+            // Pull any remote deposits that are not present locally
+            for (remoteDeposit in remoteDeposits) {
+                if (remoteDeposit.syncKey.isBlank()) continue
+                if (localDepositsByKey[remoteDeposit.syncKey] == null) {
+                    bankDepositDao.insertBankDeposit(remoteDeposit)
                 }
             }
 

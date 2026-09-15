@@ -14,6 +14,7 @@ import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.AppSettings
 import com.example.data.model.ChangeRequest
+import com.example.data.model.BankDeposit
 import com.example.util.Constants
 
 /**
@@ -536,6 +537,33 @@ object SupabaseClient {
         )
     }
 
+    // Comment: Serialization helper for BankDeposit objects to JSONObject
+    fun bankDepositToJson(deposit: BankDeposit, includeId: Boolean = true): JSONObject {
+        return JSONObject().apply {
+            if (includeId && deposit.id > 0) put("id", deposit.id)
+            put("amount", deposit.amount)
+            put("date_text", deposit.dateText)
+            put("timestamp", deposit.timestamp)
+            put("deposited_by_id", deposit.depositedById)
+            put("deposited_by_name", deposit.depositedByName)
+            // Comment: Only send the match key when one is set so legacy partial updates never blank an existing remote key
+            if (deposit.syncKey.isNotBlank()) put("sync_key", deposit.syncKey)
+        }
+    }
+
+    // Comment: Parsing helper to map JSONObject to BankDeposit
+    fun jsonToBankDeposit(json: JSONObject): BankDeposit {
+        return BankDeposit(
+            id = json.optInt("id", 0),
+            amount = json.optDouble("amount", 0.0),
+            dateText = json.optString("date_text", ""),
+            timestamp = json.optLong("timestamp", 0L),
+            depositedById = json.optInt("deposited_by_id", 0),
+            depositedByName = json.optString("deposited_by_name", ""),
+            syncKey = json.optString("sync_key", "")
+        )
+    }
+
     // Comment: Serialization helper for AppSettings objects to JSONObject
     fun settingsToJson(settings: AppSettings, includeId: Boolean = true): JSONObject {
         return JSONObject().apply {
@@ -800,6 +828,73 @@ object SupabaseClient {
         // Comment: Target by sync_key when available so the soft delete still lands when the numeric ids have drifted
         val filter = if (savings.syncKey.isNotBlank()) "sync_key=eq.${savings.syncKey}" else "id=eq.${savings.id}"
         val jsonStr = performRequest("PATCH", "savings", filter, jsonBody)
+        return jsonStr != null
+    }
+
+    // Comment: Fetch all BankDeposits from the remote ledger table (remotely soft-deleted rows are skipped here
+    // so the sync loop can drop them locally instead of resurrecting them)
+    suspend fun dbFetchBankDeposits(): List<BankDeposit> {
+        val jsonStr = performRequest("GET", "bank_deposits", "select=*") ?: return emptyList()
+        val list = mutableListOf<BankDeposit>()
+        try {
+            val arr = org.json.JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                if (obj.optBoolean("deleted", false)) continue
+                list.add(jsonToBankDeposit(obj))
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseDb", "Error parsing bank deposits response", e)
+        }
+        return list
+    }
+
+    // Comment: Fetch the sync keys of remotely soft-deleted bank deposits so this device can drop its stale copies
+    suspend fun dbFetchDeletedBankDepositKeys(): Set<String> {
+        val jsonStr = performRequest("GET", "bank_deposits", "select=sync_key&deleted=eq.true") ?: return emptySet()
+        val keys = mutableSetOf<String>()
+        try {
+            val arr = org.json.JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val key = arr.getJSONObject(i).optString("sync_key", "")
+                if (key.isNotBlank()) keys.add(key)
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseDb", "Error parsing deleted bank deposit sync keys", e)
+        }
+        return keys
+    }
+
+    // Comment: Upsert a BankDeposit row keyed by its stable sync_key so the same logical entry
+    // is never duplicated across two independent numeric ID sequences. Used for both insert and update.
+    suspend fun dbUpsertBankDeposit(deposit: BankDeposit): BankDeposit? {
+        val body = bankDepositToJson(deposit, includeId = false).toString()
+        val jsonStr = performRequest(
+            "POST",
+            "bank_deposits",
+            "on_conflict=sync_key",
+            body,
+            "resolution=merge-duplicates,return=representation"
+        ) ?: return null
+        return try {
+            val arr = org.json.JSONArray(jsonStr)
+            if (arr.length() > 0) jsonToBankDeposit(arr.getJSONObject(0)) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Comment: Soft-delete the remote bank deposit (PATCH deleted=true) instead of a hard DELETE so the deletion
+    // propagates to other devices instead of being resurrected by their next push.
+    // deleted_at is formatted with SimpleDateFormat (not java.time) because minSdk is 24 and java.time is unavailable below API 26 without desugaring.
+    suspend fun dbDeleteBankDeposit(deposit: BankDeposit): Boolean {
+        val isoNow = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            .format(java.util.Date())
+        val jsonBody = """{"deleted":true,"deleted_at":"$isoNow"}"""
+        // Comment: Target by sync_key when available so the soft delete still lands when the numeric ids have drifted
+        val filter = if (deposit.syncKey.isNotBlank()) "sync_key=eq.${deposit.syncKey}" else "id=eq.${deposit.id}"
+        val jsonStr = performRequest("PATCH", "bank_deposits", filter, jsonBody)
         return jsonStr != null
     }
 
