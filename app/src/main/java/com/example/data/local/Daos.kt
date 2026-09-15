@@ -5,6 +5,7 @@ import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.AppSettings
 import com.example.data.model.ChangeRequest
+import com.example.data.model.BankDeposit
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -126,5 +127,37 @@ interface ChangeRequestDao {
     suspend fun replaceChangeRequestWithRemote(old: ChangeRequest, new: ChangeRequest) {
         deleteChangeRequest(old)
         insertChangeRequest(new)
+    }
+}
+
+/**
+ * Data Access Object for BankDeposit-related database operations.
+ */
+@Dao
+interface BankDepositDao {
+    @Query("SELECT * FROM bank_deposits ORDER BY timestamp DESC")
+    fun getAllBankDeposits(): Flow<List<BankDeposit>>
+
+    // Comment: Fetch all local bank deposits directly for bidirectional sync
+    @Query("SELECT * FROM bank_deposits ORDER BY timestamp DESC")
+    suspend fun getAllBankDepositsDirect(): List<BankDeposit>
+
+    @Query("SELECT * FROM bank_deposits WHERE id = :id")
+    suspend fun getBankDepositById(id: Int): BankDeposit?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBankDeposit(deposit: BankDeposit): Long
+
+    @Update
+    suspend fun updateBankDeposit(deposit: BankDeposit)
+
+    @Delete
+    suspend fun deleteBankDeposit(deposit: BankDeposit)
+
+    // Comment: Atomically swap a locally-inserted bank deposit (local auto-increment ID) for the remote row (SERIAL ID) so a crash cannot leave a missing row
+    @Transaction
+    suspend fun replaceBankDepositWithRemote(old: BankDeposit, new: BankDeposit) {
+        deleteBankDeposit(old)
+        insertBankDeposit(new)
     }
 }

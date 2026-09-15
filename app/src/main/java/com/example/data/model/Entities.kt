@@ -79,3 +79,21 @@ data class ChangeRequest(
     val status: String = "Pending", // "Pending", "Approved", "Rejected"
     val timestamp: Long = System.currentTimeMillis()
 )
+
+/**
+ * Entity representing a deposit of collected society funds into the bank account.
+ * Distinct from Savings (money collected FROM members): this records money MOVED to the bank,
+ * so "Cash in Hand" (collected minus banked) can be derived.
+ */
+@Entity(tableName = "bank_deposits")
+data class BankDeposit(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val amount: Double,
+    val dateText: String, // e.g., "17-10-2023", same DD-MM-YYYY convention as Savings.dateText
+    val timestamp: Long = System.currentTimeMillis(),
+    val depositedById: Int,
+    // Comment: Denormalized depositor name so the ledger row stays readable offline and after a member is removed (mirrors Savings.memberName)
+    val depositedByName: String,
+    // Comment: Stable client-generated UUID used to match local and remote rows across two independent numeric ID sequences
+    val syncKey: String = ""
+)

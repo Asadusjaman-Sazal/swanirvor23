@@ -78,6 +78,7 @@ fun saveUriToInternalStorage(context: android.content.Context, uri: Uri): String
 enum class AppTab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Default.Home),
     Members("Members", Icons.Default.Group),
+    Bank("Bank", Icons.Default.AccountBalance),
     Admin("Admin", Icons.Default.AdminPanelSettings),
     Settings("Settings", Icons.Default.Settings)
 }
@@ -383,6 +384,7 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                         text = when (activeTab) {
                             AppTab.Home -> "Personal Dashboard"
                             AppTab.Members -> "Members Dashboard"
+                            AppTab.Bank -> "Bank Deposits"
                             AppTab.Admin -> "Admin Panel"
                             AppTab.Settings -> "Settings"
                         },
@@ -503,6 +505,7 @@ fun MainAppContent(viewModel: SavingsViewModel) {
             when (activeTab) {
                 AppTab.Home -> HomeScreen(viewModel = viewModel)
                 AppTab.Members -> MembersScreen(viewModel = viewModel)
+                AppTab.Bank -> BankScreen(viewModel = viewModel, isAdmin = isAdmin)
                 AppTab.Admin -> {
                     if (isAdmin) {
                         AdminScreen(viewModel = viewModel)

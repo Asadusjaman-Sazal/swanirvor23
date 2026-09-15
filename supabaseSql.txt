@@ -232,3 +232,45 @@ ALTER TABLE app_settings ADD COLUMN mobile_no TEXT NOT NULL DEFAULT '';
 -- Add mobile_no column to members table so admins can Call/Message members (Version: 0.0.63)
 -- ===============================================================================
 ALTER TABLE members ADD COLUMN IF NOT EXISTS mobile_no TEXT NOT NULL DEFAULT '';
+
+-- ===============================================================================
+-- Bank deposit ledger: records money moved from collected cash into the bank account so the
+-- Bank Deposits screen can derive Cash in Hand (collected minus banked) (Version: 1.0.29)
+-- ===============================================================================
+CREATE TABLE IF NOT EXISTS public.bank_deposits (
+    id SERIAL PRIMARY KEY,
+    amount DOUBLE PRECISION NOT NULL,
+    date_text TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    deposited_by_id INTEGER REFERENCES public.members(id) ON DELETE SET NULL,
+    deposited_by_name TEXT NOT NULL,
+    sync_key TEXT NOT NULL DEFAULT (gen_random_uuid())::text UNIQUE,
+    deleted BOOLEAN DEFAULT false,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Comment: ON DELETE SET NULL (not CASCADE) so removing a member never erases a financial record;
+-- the denormalized deposited_by_name keeps the ledger row readable afterwards.
+CREATE INDEX IF NOT EXISTS idx_bank_deposits_deleted ON public.bank_deposits(deleted);
+
+ALTER TABLE public.bank_deposits ENABLE ROW LEVEL SECURITY;
+
+-- Every signed-in member can read the ledger (the Bank tab is member-facing)
+CREATE POLICY "Allow read for all authenticated users" ON public.bank_deposits
+    FOR SELECT TO authenticated USING (true);
+
+-- Only admins may record, edit, or delete deposits (mirrors the savings/members admin check)
+CREATE POLICY "Admins can manage bank deposits" ON public.bank_deposits
+    FOR ALL TO authenticated USING (
+        EXISTS (
+            SELECT 1 FROM public.members
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    ) WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.members
+            WHERE user_id = auth.uid() AND role = 'Admin'
+        )
+    );

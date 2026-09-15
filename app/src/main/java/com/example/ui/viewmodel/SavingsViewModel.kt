@@ -8,9 +8,11 @@ import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
+import com.example.data.model.BankDeposit
 import com.example.data.repository.SavingsRepository
 import com.example.ui.notification.AdminNotificationHelper
 import com.example.util.Constants
+import com.example.util.BankLedger
 import com.example.util.PasswordValidator
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -46,6 +48,12 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     val currentUserSavings: StateFlow<List<Savings>>
     val appSettings: StateFlow<AppSettings>
     val allChangeRequests: StateFlow<List<ChangeRequest>>
+
+    // Comment: Bank deposit ledger (money moved from collected cash into the bank) and its derived figures
+    val allBankDeposits: StateFlow<List<BankDeposit>>
+    val totalCollected: StateFlow<Double>
+    val totalBankDeposited: StateFlow<Double>
+    val cashInHand: StateFlow<Double>
 
     // Search query for members list
     private val _memberSearchQuery = MutableStateFlow("")
@@ -84,7 +92,8 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             database.memberDao(),
             database.savingsDao(),
             database.appSettingsDao(),
-            database.changeRequestDao()
+            database.changeRequestDao(),
+            database.bankDepositDao()
         )
 
         // Seed data asynchronously
@@ -190,6 +199,23 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         allChangeRequests = repository.allChangeRequests
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+        // Comment: Bank deposit ledger state, plus the derived totals. Cash in Hand = everything collected from
+        // members minus everything banked, so it can legitimately go negative if more was banked than collected.
+        allBankDeposits = repository.allBankDeposits
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+        totalCollected = allMembers
+            .map { membersList -> membersList.sumOf { it.totalSavings } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+        totalBankDeposited = allBankDeposits
+            .map { deposits -> BankLedger.totalDeposited(deposits) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+        cashInHand = combine(totalCollected, totalBankDeposited) { collected, banked ->
+            BankLedger.cashInHand(collected, banked)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
         // Combine members and search query
         // Comment: Sort the members list alphabetically by name
         filteredMembers = combine(allMembers, _memberSearchQuery) { members, query ->
@@ -290,6 +316,33 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     fun deleteSavingsContribution(savings: Savings) {
         viewModelScope.launch {
             repository.deleteSavings(savings)
+        }
+    }
+
+    // Add bank deposit (the UI only exposes this to admins)
+    fun addBankDeposit(memberId: Int, memberName: String, amount: Double, dateText: String) {
+        viewModelScope.launch {
+            val deposit = BankDeposit(
+                amount = amount,
+                dateText = dateText,
+                depositedById = memberId,
+                depositedByName = memberName
+            )
+            repository.insertBankDeposit(deposit)
+        }
+    }
+
+    // Edit bank deposit (the UI only exposes this to admins)
+    fun updateBankDeposit(deposit: BankDeposit) {
+        viewModelScope.launch {
+            repository.updateBankDeposit(deposit)
+        }
+    }
+
+    // Delete bank deposit (the UI only exposes this to admins)
+    fun deleteBankDeposit(deposit: BankDeposit) {
+        viewModelScope.launch {
+            repository.deleteBankDeposit(deposit)
         }
     }
 
