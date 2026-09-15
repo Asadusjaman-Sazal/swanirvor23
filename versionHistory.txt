@@ -1,4 +1,4 @@
-Current Version: 1.0.29
+Current Version: 1.0.30
 -----------------------
 
 Version History:
@@ -99,3 +99,4 @@ Version: 1.0.26 - Fixed the tag-triggered release workflow failing with exit cod
 Version: 1.0.27 - Made the release workflow chmod +x gradlew before the build, because the Windows checkout kept committing the wrapper as mode 100644 (dropping the earlier mode change), and re-applied the executable bit to the tracked wrapper so Linux and macOS clones can run ./gradlew directly.
 Version: 1.0.28 - Fixed the "Update check failed (HTTP 403)" error by dropping the rate-limited GitHub REST API from the in-app update check: it now resolves the newest release tag from the public /releases/latest redirect (a body-less HEAD request, so the 200 KB tag page is never downloaded), reads the release notes from the small releases Atom feed, and derives the APK download URL from the tag itself. The anonymous API quota is 60 requests per hour shared by every device behind the same carrier IP, which is what caused the 403.
 Version: 1.0.29 - Added the Bank Deposits member tab: a new synced bank-deposit ledger (admins record the depositor, date, and amount) with Total Deposited and Cash in Hand (everything collected from members minus everything banked), backed by a new bank_deposits table, Room migration 10->11, stable sync-key matching, and remote soft-delete propagation so deletions cannot resurrect.
+Version: 1.0.30 - Moved bank deposit entry into the Admin Panel as a new "Bank Deposition" section (Select Member, Amount, Date) styled like Member Contribution, removed the Add option from the Bank Deposits tab so it now lists the ledger read-only, and gave Cash in Hand a distinct payments icon since the Savings icon is already used by Projected Grand Total.
