@@ -66,6 +66,10 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedMemberForContribution = MutableStateFlow<Member?>(null)
     val selectedMemberForContribution: StateFlow<Member?> = _selectedMemberForContribution
 
+    // Admin bank deposition form states (the depositor is picked from the member list)
+    private val _selectedMemberForBankDeposit = MutableStateFlow<Member?>(null)
+    val selectedMemberForBankDeposit: StateFlow<Member?> = _selectedMemberForBankDeposit
+
     // Admin panel accordion open/close state: only one section can be open at a time (null means all closed)
     private val _adminOpenSection = MutableStateFlow<String?>(null)
     val adminOpenSection: StateFlow<String?> = _adminOpenSection.asStateFlow()
@@ -236,6 +240,11 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     // Set selected member in Admin contribution form
     fun selectMemberForContribution(member: Member?) {
         _selectedMemberForContribution.value = member
+    }
+
+    // Set selected member in Admin bank deposition form
+    fun selectMemberForBankDeposit(member: Member?) {
+        _selectedMemberForBankDeposit.value = member
     }
 
     // Comment: Open the given Admin Panel accordion section, closing the previously open one (only one at a time)
@@ -1159,6 +1168,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     companion object {
         // Comment: Admin Panel accordion section keys (only one section can be open at a time)
         const val SECTION_CONTRIBUTION = "contribution"
+        const val SECTION_BANK_DEPOSIT = "bankDeposit"
         const val SECTION_ACTIVE_CYCLE = "activeCycle"
         const val SECTION_CHANGE_REQUESTS = "changeRequests"
         const val SECTION_MEMBERS = "members"

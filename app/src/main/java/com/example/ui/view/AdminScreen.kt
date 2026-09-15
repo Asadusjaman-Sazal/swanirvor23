@@ -789,6 +789,25 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         )
     }
 
+    // Bank Deposition form states, mirroring the Member Contribution form above
+    var showBankDepositMemberDropdown by remember { mutableStateOf(false) }
+    val selectedBankDepositMember by viewModel.selectedMemberForBankDeposit.collectAsStateWithLifecycle()
+    var bankDepositAmountText by remember { mutableStateOf("") }
+    var bankDepositDateText by remember { mutableStateOf(todayDateString) }
+
+    val bankDepositCalendar = remember { Calendar.getInstance() }
+    val bankDepositDatePickerDialog = remember {
+        android.app.DatePickerDialog(
+            context,
+            { _, selectedYear, selectedMonth, selectedDayOfMonth ->
+                bankDepositDateText = String.format(Locale.US, "%02d-%02d-%04d", selectedDayOfMonth, selectedMonth + 1, selectedYear)
+            },
+            bankDepositCalendar.get(Calendar.YEAR),
+            bankDepositCalendar.get(Calendar.MONTH),
+            bankDepositCalendar.get(Calendar.DAY_OF_MONTH)
+        )
+    }
+
     // Active cycle Sunday to Saturday range and payment-date status calculations
     val (currentSunday, currentSaturday) = getCurrentCycleRange()
 
@@ -970,6 +989,162 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                         onClick = {
                             viewModel.selectMemberForContribution(null)
                             weeklyAmountText = ""
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.RestartAlt, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            Text("Clear")
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Bank Deposition Accordion ---
+        // Comment: Admins only record a deposit here; the Bank Deposits tab just displays the resulting ledger
+        AccordionCard(
+            title = "Bank Deposition",
+            icon = Icons.Default.AccountBalance,
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_BANK_DEPOSIT,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_BANK_DEPOSIT) },
+            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Dropdown Member Selector
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Select Member",
+                        style = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                    ExposedDropdownMenuBox(
+                        expanded = showBankDepositMemberDropdown,
+                        onExpandedChange = { showBankDepositMemberDropdown = !showBankDepositMemberDropdown }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedBankDepositMember?.name ?: "Choose a member...",
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showBankDepositMemberDropdown) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true)
+                                .testTag("bank_deposition_member_input"),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = showBankDepositMemberDropdown,
+                            onDismissRequest = { showBankDepositMemberDropdown = false }
+                        ) {
+                            members.sortedBy { it.name }.forEach { m ->
+                                DropdownMenuItem(
+                                    text = { Text(m.name) },
+                                    onClick = {
+                                        viewModel.selectMemberForBankDeposit(m)
+                                        showBankDepositMemberDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Deposition Amount Input
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Amount",
+                        style = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                    OutlinedTextField(
+                        value = bankDepositAmountText,
+                        onValueChange = { bankDepositAmountText = it },
+                        trailingIcon = { Text("৳", fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 12.dp)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("bank_deposition_amount_input"),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                // Date Input
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Date",
+                        style = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = bankDepositDateText,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = {
+                                IconButton(onClick = { bankDepositDatePickerDialog.show() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarToday,
+                                        contentDescription = "Select Date"
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("bank_deposition_date_input"),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        // Invisible overlay to capture click events on the entire text field area
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { bankDepositDatePickerDialog.show() }
+                        )
+                    }
+                }
+
+                // Save / Clear Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            val targetMember = selectedBankDepositMember
+                            val amt = bankDepositAmountText.toDoubleOrNull()
+                            if (targetMember != null && amt != null && amt > 0) {
+                                // Comment: The picked member is stored as the depositor of the banked amount
+                                viewModel.addBankDeposit(
+                                    memberId = targetMember.id,
+                                    memberName = targetMember.name,
+                                    amount = amt,
+                                    dateText = bankDepositDateText
+                                )
+                                Toast.makeText(context, "Saved bank deposit of $amt৳ by ${targetMember.name}", Toast.LENGTH_LONG).show()
+                                // Clear selection
+                                viewModel.selectMemberForBankDeposit(null)
+                                bankDepositAmountText = ""
+                            } else {
+                                Toast.makeText(context, "Please select a member and enter a valid amount", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("bank_deposition_save_button")
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
+                            Text("Save")
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.selectMemberForBankDeposit(null)
+                            bankDepositAmountText = ""
                         },
                         modifier = Modifier.weight(1f)
                     ) {

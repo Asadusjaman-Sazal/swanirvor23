@@ -23,10 +23,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -86,7 +85,7 @@ fun BankScreen(viewModel: SavingsViewModel, isAdmin: Boolean) {
     // Comment: Oldest first so the ledger serials stay stable as new deposits are appended at the end
     val ledger = remember(deposits) { BankLedger.orderedForLedger(deposits) }
 
-    // Comment: Dialog state — a null editingDeposit means the dialog is recording a brand new deposit
+    // Comment: Dialog state — the dialog is only ever opened to edit an existing row, so editingDeposit is always set
     var showEntryDialog by remember { mutableStateOf(false) }
     var editingDeposit by remember { mutableStateOf<BankDeposit?>(null) }
     var depositPendingDelete by remember { mutableStateOf<BankDeposit?>(null) }
@@ -123,7 +122,7 @@ fun BankScreen(viewModel: SavingsViewModel, isAdmin: Boolean) {
             BankSummaryCard(
                 label = "Cash in Hand",
                 valueText = String.format(Locale.US, "%,.0f৳", cashInHand),
-                icon = Icons.Default.Savings,
+                icon = Icons.Default.Payments,
                 accent = if (isCashNegative) MaterialTheme.colorScheme.error else Color(0xFF15803D),
                 contentDescription = "Cash in Hand",
                 modifier = Modifier.testTag("bank_cash_in_hand_section"),
@@ -145,32 +144,14 @@ fun BankScreen(viewModel: SavingsViewModel, isAdmin: Boolean) {
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Deposit History",
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            // Comment: Deposits can only be recorded from Admin Panel > Bank Deposition, so this screen lists them read-only
+            Text(
+                text = "Deposit History",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (isAdmin) {
-                    TextButton(
-                        onClick = {
-                            editingDeposit = null
-                            showEntryDialog = true
-                        },
-                        modifier = Modifier.testTag("add_bank_deposit_button")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add")
-                    }
-                }
-            }
+            )
 
             if (ledger.isEmpty()) {
                 Box(
@@ -181,7 +162,7 @@ fun BankScreen(viewModel: SavingsViewModel, isAdmin: Boolean) {
                 ) {
                     Text(
                         text = if (isAdmin) {
-                            "No bank deposits recorded yet. Use Add to record the first one."
+                            "No bank deposits recorded yet. Record one from Admin Panel > Bank Deposition."
                         } else {
                             "No bank deposits recorded yet."
                         },
