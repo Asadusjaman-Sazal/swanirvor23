@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -496,7 +497,20 @@ fun MainAppContent(viewModel: SavingsViewModel) {
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
-        Box(
+        // Comment: Swiping down from the top of any tab runs the same manual sync as the header button,
+        // showing the AppSheet-style spinner until the sync finishes. The padding sits on the refresh
+        // container so the indicator appears just below the app bar instead of under it.
+        PullToRefreshBox(
+            isRefreshing = isManualSyncing,
+            onRefresh = {
+                // Comment: A failed pull-sync is surfaced as a toast so it never fails silently; a successful
+                // one needs no toast because the spinner already confirmed it.
+                viewModel.triggerManualSync { success, message ->
+                    if (!success) {
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
