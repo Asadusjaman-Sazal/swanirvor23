@@ -61,6 +61,7 @@ import com.example.util.getPreviousCycleRange
 import com.example.util.getElapsedCycleCount
 import com.example.util.isCurrentMonth
 import com.example.util.parseDateTextToMillis
+import com.example.util.SavingsOrdering
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -146,7 +147,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                     )
                 )
                 Text(
-                    text = "Learned Advocate ${appSettings.profileName}",
+                    text = "Adv. ${appSettings.profileName}",
                     style = MaterialTheme.typography.titleMedium.copy(
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
@@ -487,33 +488,19 @@ fun HomeScreen(viewModel: SavingsViewModel) {
         }
 
         // Recent Contributions Section
+        // Comment: Rows read newest-first by the contribution date (not insertion time) so back-dated or synced deposits stay in chronological order.
+        val sortedSavings = remember(savingsList) { SavingsOrdering.newestFirst(savingsList) }
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Text(
-                    text = "Savings History",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+            // Savings History header; the non-functional "View All" action was removed.
+            Text(
+                text = "Savings History",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                TextButton(onClick = {
-                    Toast.makeText(context, "Full list of ${savingsList.size} records", Toast.LENGTH_SHORT).show()
-                }) {
-                    Text(
-                        text = "View All",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            color = Color(0xFF0C9488),
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
-            }
+            )
 
             if (savingsList.isEmpty()) {
                 Box(
@@ -541,7 +528,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                     Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        savingsList.forEachIndexed { index, item ->
+                        sortedSavings.forEachIndexed { index, item ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -614,7 +601,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                                 }
                             }
 
-                            if (index < savingsList.size - 1) {
+                            if (index < sortedSavings.size - 1) {
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                                     modifier = Modifier.padding(horizontal = 16.dp)

@@ -57,6 +57,7 @@ import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.formatToDdMmYyyy
 import com.example.util.isCurrentMonth
 import com.example.util.getElapsedCycleCount
+import com.example.util.SavingsOrdering
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -304,9 +305,10 @@ fun MembersScreen(viewModel: SavingsViewModel) {
 
     // Render the details and savings history dialog if a member is clicked
     selectedMemberForHistory?.let { member ->
-        val memberSavings = allSavings
-            .filter { it.memberId == member.id }
-            .sortedByDescending { it.timestamp }
+        // Comment: The ledger reads newest-first by the contribution date itself (not insertion time) so back-dated or synced deposits stay in chronological order.
+        val memberSavings = SavingsOrdering.newestFirst(
+            allSavings.filter { it.memberId == member.id }
+        )
 
         MemberSavingsHistoryDialog(
             member = member,
