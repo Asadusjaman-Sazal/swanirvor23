@@ -795,13 +795,21 @@ fun AdminScreen(viewModel: SavingsViewModel) {
     val selectedBankDepositMember by viewModel.selectedMemberForBankDeposit.collectAsStateWithLifecycle()
     var bankDepositAmountText by remember { mutableStateOf("") }
     var bankDepositDateText by remember { mutableStateOf(todayDateString) }
-    // Comment: Draft for the central Weekly Savings Goal edit box; kept in sync with the shared value below
-    var weeklyGoalText by remember { mutableStateOf("") }
-    // Comment: The central goal every member's projections come from, mirrored into the edit box so the
-    // admin always sees the current society-wide value (including changes made on another device)
-    val weeklyGoal by viewModel.weeklyGoal.collectAsStateWithLifecycle()
-    LaunchedEffect(weeklyGoal) {
-        weeklyGoalText = String.format(Locale.US, "%.0f", weeklyGoal)
+    // Comment: Every member's current Weekly Savings Goal, keyed by their lowercased email, so the section below
+    // lists each member with their own value instead of one society-wide number
+    val weeklyGoals by viewModel.weeklyGoals.collectAsStateWithLifecycle()
+    // Comment: Per-member goal drafts, keyed by the member's lowercased email. Filled once per member from the shared
+    // table (or the 500৳ fallback) so a background sync or recomposition never clobbers an in-progress edit
+    val goalDrafts = remember { mutableStateMapOf<String, String>() }
+    // Comment: Which member rows have their amount box expanded; every row starts collapsed so the list stays compact
+    val expandedGoalRows = remember { mutableStateListOf<String>() }
+    LaunchedEffect(members, weeklyGoals) {
+        members.forEach { member ->
+            val email = member.email.trim().lowercase()
+            if (goalDrafts[email] == null) {
+                goalDrafts[email] = String.format(Locale.US, "%.0f", weeklyGoals[email] ?: 500.0)
+            }
+        }
     }
 
     val bankDepositCalendar = remember { Calendar.getInstance() }
@@ -1166,9 +1174,10 @@ fun AdminScreen(viewModel: SavingsViewModel) {
             }
         }
 
-        // --- SECTION: Central Weekly Savings Goal ---
-        // Comment: One society-wide goal edited only here, so every member's Total Due and Projected Savings
-        // are calculated from the same number instead of each user's own Settings value.
+        // --- SECTION: Weekly Savings Goals (per member) ---
+        // Comment: Members save different amounts each week, so this section lists every member with their own goal.
+        // A member's amount box is collapsed until the admin taps the row, and the single Save button at the end of the
+        // list saves every edited goal at once, keeping the shared table (and therefore every device) in step.
         AccordionCard(
             title = "Weekly Savings Goal",
             icon = Icons.Default.Savings,
@@ -1181,46 +1190,130 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Applies to every member's Total Due and Projected Savings.",
+                    text = "Each member's goal drives their own Total Due and Projected Savings. Tap a member to edit their amount, then Save once for the whole list.",
                     style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                 )
 
-                // Goal Amount Input
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (members.isEmpty()) {
                     Text(
-                        text = "Weekly Goal",
-                        style = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    )
-                    OutlinedTextField(
-                        value = weeklyGoalText,
-                        onValueChange = { weeklyGoalText = it },
-                        leadingIcon = { Text("৳", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("weekly_goal_input"),
-                        shape = RoundedCornerShape(8.dp)
+                        text = "No members yet. Add a member to set their weekly goal.",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                     )
                 }
 
+                // Comment: Members are listed alphabetically so the admin can find a name quickly; new members appear
+                // here automatically because this reads the same live member list as the rest of the Admin Panel
+                val sortedGoalMembers = members.sortedBy { it.name }
+                sortedGoalMembers.forEach { member ->
+                    val email = member.email.trim().lowercase()
+                    val isExpanded = expandedGoalRows.contains(email)
+                    val currentGoal = weeklyGoals[email] ?: 500.0
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                // Comment: Tapping a member expands or collapses only their own amount box
+                                if (isExpanded) expandedGoalRows.remove(email) else expandedGoalRows.add(email)
+                            }
+                            .testTag("weekly_goal_row_${member.id}"),
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isDarkMode) Color(0xFF1E293B) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    MemberAvatar(name = member.name, avatarUrl = member.avatarUrl, size = 32.dp)
+                                    Column {
+                                        Text(
+                                            text = member.name,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                        )
+                                        Text(
+                                            text = member.email,
+                                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
+                                        )
+                                    }
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = String.format(Locale.US, "%,.0f৳", currentGoal),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                    )
+                                    Icon(
+                                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = if (isExpanded) "Collapse goal input" else "Expand goal input",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            // Comment: The amount box appears only while this member's row is expanded
+                            if (isExpanded) {
+                                OutlinedTextField(
+                                    value = goalDrafts[email] ?: "",
+                                    onValueChange = { goalDrafts[email] = it },
+                                    leadingIcon = { Text("৳", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp)
+                                        .testTag("weekly_goal_input_${member.id}"),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Comment: One central Save button at the end of the list; only members whose draft differs from their
+                // shared goal are pushed, so saving with nothing edited costs no network traffic
                 Button(
                     onClick = {
                         keyboardController?.hide()
                         focusManager.clearFocus()
-                        val amt = weeklyGoalText.toDoubleOrNull()
-                        if (amt != null && amt > 0) {
-                            // Comment: Report what really happened instead of always claiming success, because a
-                            // goal can now be saved offline or be superseded by another admin's newer value
-                            viewModel.setCommunityWeeklyGoal(amt) { result ->
-                                val message = when (result) {
-                                    WeeklyGoalUpdateResult.SYNCED -> "Weekly Savings Goal updated for all members"
-                                    WeeklyGoalUpdateResult.PENDING -> "Weekly Savings Goal saved on this device — it will sync once you are online"
-                                    WeeklyGoalUpdateResult.CONFLICT -> "Another admin changed the goal first — showing their newer value"
-                                }
-                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        val changed = mutableMapOf<String, Double>()
+                        var invalidName: String? = null
+                        for (member in sortedGoalMembers) {
+                            val email = member.email.trim().lowercase()
+                            val parsed = goalDrafts[email]?.toDoubleOrNull()
+                            if (parsed == null || parsed <= 0) {
+                                invalidName = member.name
+                                break
                             }
-                        } else {
-                            Toast.makeText(context, "Please enter a valid amount!", Toast.LENGTH_SHORT).show()
+                            if (parsed != (weeklyGoals[email] ?: 500.0)) changed[email] = parsed
+                        }
+                        when {
+                            invalidName != null ->
+                                Toast.makeText(context, "Please enter a valid amount for $invalidName!", Toast.LENGTH_SHORT).show()
+
+                            changed.isEmpty() ->
+                                Toast.makeText(context, "No changes to save", Toast.LENGTH_SHORT).show()
+
+                            else ->
+                                // Comment: Report what really happened instead of always claiming success, because a
+                                // goal can be saved offline or be superseded by another admin's newer value
+                                viewModel.setCommunityWeeklyGoals(changed) { result ->
+                                    val message = when (result) {
+                                        WeeklyGoalUpdateResult.SYNCED -> "Weekly Savings Goals updated for ${changed.size} member(s)"
+                                        WeeklyGoalUpdateResult.PENDING -> "Goals saved on this device — they will sync once you are online"
+                                        WeeklyGoalUpdateResult.CONFLICT -> "Another admin changed a goal first — showing their newer value"
+                                    }
+                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -1230,7 +1323,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
-                        Text("Save")
+                        Text("Save All Goals")
                     }
                 }
             }

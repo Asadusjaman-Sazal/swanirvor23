@@ -17,7 +17,7 @@ import com.example.data.model.CommunitySettings
  * Room Database holder for the Swanirvor-23 application.
  * Manages tables for members, individual savings contributions, and app settings.
  */
-@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class, CommunitySettings::class], version = 13, exportSchema = false)
+@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class, CommunitySettings::class], version = 14, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun memberDao(): MemberDao
     abstract fun savingsDao(): SavingsDao
@@ -40,7 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lexsave_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 .build()
                 INSTANCE = instance
                 instance
@@ -114,6 +114,26 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `community_settings` ADD COLUMN `remoteVersion` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        // Comment: Migrate Room database from version 13 to 14 by turning the single society-wide Weekly Savings Goal
+        // into one goal per member, because members save different amounts. The table is recreated (copy, drop, rename)
+        // since its primary key changes from the singleton id to the member's lowercased email, which SQLite cannot
+        // alter in place. Each existing member is seeded with the old shared goal (or the 500৳ default) so no one
+        // loses continuity when the society-wide value had been customized; duplicate emails collapse to one row.
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `community_settings_new` (`memberEmail` TEXT NOT NULL, `weeklyGoal` REAL NOT NULL, `remoteVersion` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`memberEmail`))"
+                )
+                db.execSQL(
+                    "INSERT OR IGNORE INTO `community_settings_new` (`memberEmail`, `weeklyGoal`, `remoteVersion`) " +
+                        "SELECT lower(trim(`email`)), COALESCE((SELECT `weeklyGoal` FROM `community_settings` WHERE `id` = 1), 500.0), 0 " +
+                        "FROM `members` GROUP BY lower(trim(`email`))"
+                )
+                db.execSQL("DROP TABLE `community_settings`")
+                db.execSQL("ALTER TABLE `community_settings_new` RENAME TO `community_settings`")
             }
         }
     }

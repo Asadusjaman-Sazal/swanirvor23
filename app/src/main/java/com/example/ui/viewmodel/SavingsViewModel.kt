@@ -372,19 +372,27 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Comment: Central Weekly Savings Goal set by an admin and shared by every member; all Total Due and
-    // Projected Savings figures are derived from it so no two members can see different projections.
-    // Falls back to the 500৳ default while the shared row is still loading or absent.
-    val weeklyGoal: StateFlow<Double> = repository.communitySettings
-        .map { it?.weeklyGoal ?: 500.0 }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 500.0)
+    // Comment: Every member's Weekly Savings Goal, keyed by their lowercased email, read from the single shared table
+    // so the Members list, history dialogs and Admin Panel all use each member's own goal instead of one society-wide
+    // value. Falls back to an empty map (callers default to 500৳) while the shared rows are still loading.
+    val weeklyGoals: StateFlow<Map<String, Double>> = repository.communitySettings
+        .map { rows -> rows.associate { it.memberEmail.lowercase() to it.weeklyGoal } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    // Comment: Admin-only update of the central Weekly Savings Goal; the write is pushed to Supabase and
-    // the members' readers pick it up on their next sync. The outcome is reported back so the Admin Panel can
-    // say whether the goal reached everyone, is still waiting to sync, or was beaten by a newer goal.
-    fun setCommunityWeeklyGoal(goal: Double, onResult: (WeeklyGoalUpdateResult) -> Unit) {
+    // Comment: The signed-in member's own Weekly Savings Goal, so the Personal Dashboard's Total Due / Projected
+    // Savings match the Members list. Resolved via the current member's email and falling back to the 500৳ default
+    // while the shared rows load or when the member has no row yet.
+    val weeklyGoal: StateFlow<Double> = combine(repository.communitySettings, currentMemberEmail) { rows, email ->
+        val key = email?.trim()?.lowercase()
+        rows.find { it.memberEmail.lowercase() == key }?.weeklyGoal ?: 500.0
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 500.0)
+
+    // Comment: Admin-only update of the per-member Weekly Savings Goals; each write is pushed to Supabase and the
+    // members' readers pick them up on their next sync. The outcome is reported back so the Admin Panel can say whether
+    // the goals reached everyone, are still waiting to sync, or were beaten by a newer value set on another device.
+    fun setCommunityWeeklyGoals(goals: Map<String, Double>, onResult: (WeeklyGoalUpdateResult) -> Unit) {
         viewModelScope.launch {
-            onResult(repository.updateCommunityWeeklyGoal(goal))
+            onResult(repository.updateCommunityWeeklyGoals(goals))
         }
     }
 

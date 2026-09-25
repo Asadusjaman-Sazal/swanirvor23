@@ -921,10 +921,11 @@ object SupabaseClient {
         }
     }
 
-    // Comment: Parsing helper to map the shared CommunitySettings JSONObject
+    // Comment: Parsing helper to map one member's CommunitySettings JSONObject
     fun jsonToCommunitySettings(json: JSONObject): CommunitySettings {
         return CommunitySettings(
-            id = json.optInt("id", 1),
+            // Comment: Lowercased and trimmed so a local row matches its remote row no matter how the email was typed
+            memberEmail = json.optString("member_email").trim().lowercase(),
             weeklyGoal = json.optDouble("weekly_goal", 500.0),
             // Comment: The server-owned row version is the precondition for the next write; 0 means this device has
             // never had a confirmed value from the server, so it must create the row rather than patch it
@@ -932,41 +933,66 @@ object SupabaseClient {
         )
     }
 
-    // Comment: Read the row PostgREST returns for a read or a write; an empty array means nothing matched
-    private fun parseCommunitySettingsResponse(jsonStr: String?): CommunitySettings? {
-        if (jsonStr == null) return null
+    // Comment: Read the rows PostgREST returns for a read or a write; an empty array means nothing matched
+    private fun parseCommunitySettingsResponse(jsonStr: String?): List<CommunitySettings> {
+        if (jsonStr == null) return emptyList()
         return try {
             val arr = org.json.JSONArray(jsonStr)
-            if (arr.length() > 0) jsonToCommunitySettings(arr.getJSONObject(0)) else null
+            val list = mutableListOf<CommunitySettings>()
+            for (i in 0 until arr.length()) {
+                list.add(jsonToCommunitySettings(arr.getJSONObject(i)))
+            }
+            list
         } catch (e: Exception) {
-            null
+            emptyList()
         }
     }
 
-    // Comment: Fetch the single shared CommunitySettings row (readable by every authenticated member)
-    suspend fun dbFetchCommunitySettings(): CommunitySettings? {
+    // Comment: Fetch every member's Weekly Savings Goal row (readable by every authenticated member)
+    suspend fun dbFetchCommunitySettings(): List<CommunitySettings> {
         return parseCommunitySettingsResponse(performRequest("GET", "community_settings", "select=*"))
     }
 
-    /**
-     * Comment: Push the admin's central Weekly Savings Goal. When this device knows the version of the shared row it
-     * last read, the write only lands while the remote row still has that version (compare-and-set), so an admin
-     * device holding a stale goal cannot overwrite a newer one set elsewhere. A device with no confirmed baseline
-     * yet creates the singleton row instead of patching it. RLS rejects all of this for non-admins.
-     * Returns the stored row, or null when the precondition failed or the request errored.
-     */
-    suspend fun dbPushCommunitySettings(weeklyGoal: Double, expectedVersion: Int): CommunitySettings? {
-        if (expectedVersion <= 0) {
-            val createBody = JSONObject().apply {
-                put("id", 1)
-                put("weekly_goal", weeklyGoal)
-            }.toString()
-            return parseCommunitySettingsResponse(performRequest("POST", "community_settings", "", createBody))
-        }
-        val body = JSONObject().apply { put("weekly_goal", weeklyGoal) }.toString()
+    // Comment: Re-read a single member's row after a failed write, so a caller can tell a lost race from a transient
+    // error without downloading every member's goal. The email is percent-encoded so special characters survive
+    // the PostgREST query string.
+    suspend fun dbFetchCommunitySettingsForMember(email: String): CommunitySettings? {
+        val normalized = email.trim().lowercase()
+        val encoded = java.net.URLEncoder.encode(normalized, "UTF-8")
         return parseCommunitySettingsResponse(
-            performRequest("PATCH", "community_settings", "id=eq.1&version=eq.$expectedVersion", body)
-        )
+            performRequest("GET", "community_settings", "select=*&member_email=eq.$encoded")
+        ).firstOrNull()
+    }
+
+    /**
+     * Comment: Push one member's Weekly Savings Goal. When this device knows the version of the row it last read, the
+     * write only lands while the remote row still has that version (compare-and-set), so an admin device holding a
+     * stale goal cannot overwrite a newer one set elsewhere. A device with no confirmed baseline yet upserts the row
+     * (merge-duplicates) instead of patching it, so a first save for a brand-new member still succeeds. RLS rejects
+     * all of this for non-admins. Returns the stored row, or null when the precondition failed or the request errored.
+     */
+    suspend fun dbPushCommunitySettings(settings: CommunitySettings): CommunitySettings? {
+        val email = settings.memberEmail.trim().lowercase()
+        if (settings.remoteVersion <= 0) {
+            val createBody = JSONObject().apply {
+                put("member_email", email)
+                put("weekly_goal", settings.weeklyGoal)
+            }.toString()
+            return parseCommunitySettingsResponse(
+                performRequest(
+                    "POST",
+                    "community_settings",
+                    "",
+                    createBody,
+                    prefer = "return=representation,resolution=merge-duplicates"
+                )
+            ).firstOrNull()
+        }
+        val body = JSONObject().apply { put("weekly_goal", settings.weeklyGoal) }.toString()
+        val encoded = java.net.URLEncoder.encode(email, "UTF-8")
+        return parseCommunitySettingsResponse(
+            performRequest("PATCH", "community_settings", "member_email=eq.$encoded&version=eq.${settings.remoteVersion}", body)
+        ).firstOrNull()
     }
 
     // Comment: Fetch all ChangeRequests from remote database table

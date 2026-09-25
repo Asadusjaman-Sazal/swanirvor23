@@ -164,15 +164,18 @@ interface BankDepositDao {
 }
 
 /**
- * Data Access Object for the single shared CommunitySettings row (central Weekly Savings Goal).
+ * Data Access Object for the per-member CommunitySettings rows (each member's own Weekly Savings Goal).
  */
 @Dao
 interface CommunitySettingsDao {
-    @Query("SELECT * FROM community_settings WHERE id = 1")
-    fun getCommunitySettingsFlow(): Flow<CommunitySettings?>
+    @Query("SELECT * FROM community_settings")
+    fun getCommunitySettingsFlow(): Flow<List<CommunitySettings>>
 
-    @Query("SELECT * FROM community_settings WHERE id = 1")
-    suspend fun getCommunitySettingsDirect(): CommunitySettings?
+    @Query("SELECT * FROM community_settings")
+    suspend fun getAllCommunitySettingsDirect(): List<CommunitySettings>
+
+    @Query("SELECT * FROM community_settings WHERE memberEmail = :email")
+    suspend fun getCommunitySettingsForMember(email: String): CommunitySettings?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateCommunitySettings(settings: CommunitySettings)

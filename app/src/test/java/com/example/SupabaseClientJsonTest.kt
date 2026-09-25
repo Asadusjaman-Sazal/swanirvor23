@@ -56,15 +56,16 @@ class SupabaseClientJsonTest {
     }
 
     @Test
-    fun `community settings parse the shared row version`() {
+    fun `community settings parse the member key and row version`() {
         val parsed = SupabaseClient.jsonToCommunitySettings(
             JSONObject()
-                .put("id", 1)
+                .put("member_email", "  Asad@Example.com ")
                 .put("weekly_goal", 800.0)
                 .put("version", 4)
         )
 
-        assertEquals(1, parsed.id)
+        // Comment: The email is trimmed and lowercased so a local goal row matches its remote row on every device
+        assertEquals("asad@example.com", parsed.memberEmail)
         assertEquals(800.0, parsed.weeklyGoal, 0.0)
         assertEquals(4, parsed.remoteVersion)
     }
@@ -72,7 +73,7 @@ class SupabaseClientJsonTest {
     @Test
     fun `community settings without a row version report never confirmed`() {
         val parsed = SupabaseClient.jsonToCommunitySettings(
-            JSONObject().put("id", 1).put("weekly_goal", 500.0)
+            JSONObject().put("member_email", "asad@example.com").put("weekly_goal", 500.0)
         )
 
         // Comment: 0 means this device has no confirmed baseline yet, so its next write must create the row
