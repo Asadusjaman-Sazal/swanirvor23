@@ -9,6 +9,7 @@ import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
 import com.example.data.model.BankDeposit
+import com.example.data.model.WeeklyGoalUpdateResult
 import com.example.data.repository.SavingsRepository
 import com.example.ui.notification.AdminNotificationHelper
 import com.example.util.Constants
@@ -97,7 +98,8 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             database.savingsDao(),
             database.appSettingsDao(),
             database.changeRequestDao(),
-            database.bankDepositDao()
+            database.bankDepositDao(),
+            database.communitySettingsDao()
         )
 
         // Seed data asynchronously
@@ -370,11 +372,19 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Update settings: Personal Goal
-    fun setPersonalGoal(goal: Double) {
+    // Comment: Central Weekly Savings Goal set by an admin and shared by every member; all Total Due and
+    // Projected Savings figures are derived from it so no two members can see different projections.
+    // Falls back to the 500৳ default while the shared row is still loading or absent.
+    val weeklyGoal: StateFlow<Double> = repository.communitySettings
+        .map { it?.weeklyGoal ?: 500.0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 500.0)
+
+    // Comment: Admin-only update of the central Weekly Savings Goal; the write is pushed to Supabase and
+    // the members' readers pick it up on their next sync. The outcome is reported back so the Admin Panel can
+    // say whether the goal reached everyone, is still waiting to sync, or was beaten by a newer goal.
+    fun setCommunityWeeklyGoal(goal: Double, onResult: (WeeklyGoalUpdateResult) -> Unit) {
         viewModelScope.launch {
-            val current = repository.getSettingsDirect() ?: AppSettings()
-            repository.updateSettings(current.copy(personalGoal = goal))
+            onResult(repository.updateCommunityWeeklyGoal(goal))
         }
     }
 
@@ -1169,6 +1179,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         // Comment: Admin Panel accordion section keys (only one section can be open at a time)
         const val SECTION_CONTRIBUTION = "contribution"
         const val SECTION_BANK_DEPOSIT = "bankDeposit"
+        const val SECTION_WEEKLY_GOAL = "weeklyGoal"
         const val SECTION_ACTIVE_CYCLE = "activeCycle"
         const val SECTION_CHANGE_REQUESTS = "changeRequests"
         const val SECTION_MEMBERS = "members"

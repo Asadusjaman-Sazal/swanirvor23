@@ -77,9 +77,10 @@ fun MembersScreen(viewModel: SavingsViewModel) {
     // Comment: Grand Total is computed from each member's already-derived totalSavings, so no new stored field or schema change is needed
     val grandTotal = filteredMembers.sumOf { it.totalSavings }
     // Comment: Projected Grand Total sums each member's projected savings (elapsed cycles × weekly goal) using the same cycle count as the Personal Dashboard.
-    val weeklyGoalForGrand = appSettings.personalGoal
+    // Comment: Grand totals use the one central Weekly Savings Goal an admin sets, so all members are projected at the same rate
+    val weeklyGoal by viewModel.weeklyGoal.collectAsStateWithLifecycle()
     val elapsedCyclesForGrand = getElapsedCycleCount()
-    val projectedGrandTotal = filteredMembers.sumOf { elapsedCyclesForGrand * weeklyGoalForGrand }
+    val projectedGrandTotal = filteredMembers.sumOf { elapsedCyclesForGrand * weeklyGoal }
 
     // State to hold the currently selected member for showing their savings history
     var selectedMemberForHistory by remember { mutableStateOf<Member?>(null) }
@@ -313,7 +314,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
         MemberSavingsHistoryDialog(
             member = member,
             savingsList = memberSavings,
-            appSettings = appSettings,
+            weeklyGoal = weeklyGoal,
             onDismiss = { selectedMemberForHistory = null }
         )
     }
@@ -334,7 +335,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
 fun MemberSavingsHistoryDialog(
     member: Member,
     savingsList: List<Savings>,
-    appSettings: AppSettings,
+    weeklyGoal: Double,
     onDismiss: () -> Unit
 ) {
     var showLargeProfileImage by remember { mutableStateOf(false) }
@@ -344,8 +345,8 @@ fun MemberSavingsHistoryDialog(
         .filter { isCurrentMonth(it.dateText) }
         .sumOf { it.amount }
 
-    // Comment: Per-member due/projected use the same cycle count and Weekly Savings Goal as the Personal Dashboard (community started Sun, 29 Mar 2026).
-    val memberWeeklyGoal = appSettings.personalGoal
+    // Comment: Per-member due/projected use the same cycle count and central Weekly Savings Goal as the Personal Dashboard (community started Sun, 29 Mar 2026).
+    val memberWeeklyGoal = weeklyGoal
     val memberElapsedCycles = getElapsedCycleCount()
     val memberTotalDue = maxOf(0.0, (memberElapsedCycles * memberWeeklyGoal) - member.totalSavings)
     val memberTotalProjected = memberElapsedCycles * memberWeeklyGoal

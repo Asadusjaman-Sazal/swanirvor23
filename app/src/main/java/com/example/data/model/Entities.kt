@@ -1,5 +1,6 @@
 package com.example.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -78,6 +79,23 @@ data class ChangeRequest(
     val newDateText: String? = null,
     val status: String = "Pending", // "Pending", "Approved", "Rejected"
     val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
+ * Entity representing the society-wide configuration shared by every member.
+ * Deliberately separate from AppSettings, which is private to each authenticated user: a single
+ * admin-owned row is the central source of truth for values every member's totals are derived from.
+ */
+@Entity(tableName = "community_settings")
+data class CommunitySettings(
+    // Comment: Singleton row — only id 1 exists locally (and remotely), so the value is always unique
+    @PrimaryKey val id: Int = 1,
+    // Comment: Central Weekly Savings Goal all Total Due / Projected Savings calculations use
+    val weeklyGoal: Double = 500.0,
+    // Comment: Version of the remote row this goal was last read from (0 = never confirmed by the server). It is the
+    // precondition sent with the next remote write, so an admin device holding an older value cannot overwrite a
+    // newer goal set on another device. The explicit default keeps the column DDL in step with migration 12->13.
+    @ColumnInfo(defaultValue = "0") val remoteVersion: Int = 0
 )
 
 /**
