@@ -15,6 +15,7 @@ import com.example.data.model.Savings
 import com.example.data.model.AppSettings
 import com.example.data.model.ChangeRequest
 import com.example.data.model.BankDeposit
+import com.example.data.model.CommunitySettings
 import com.example.util.Constants
 
 /**
@@ -918,6 +919,54 @@ object SupabaseClient {
         } else {
             performRequest("POST", "app_settings", "", body) != null
         }
+    }
+
+    // Comment: Parsing helper to map the shared CommunitySettings JSONObject
+    fun jsonToCommunitySettings(json: JSONObject): CommunitySettings {
+        return CommunitySettings(
+            id = json.optInt("id", 1),
+            weeklyGoal = json.optDouble("weekly_goal", 500.0),
+            // Comment: The server-owned row version is the precondition for the next write; 0 means this device has
+            // never had a confirmed value from the server, so it must create the row rather than patch it
+            remoteVersion = json.optInt("version", 0)
+        )
+    }
+
+    // Comment: Read the row PostgREST returns for a read or a write; an empty array means nothing matched
+    private fun parseCommunitySettingsResponse(jsonStr: String?): CommunitySettings? {
+        if (jsonStr == null) return null
+        return try {
+            val arr = org.json.JSONArray(jsonStr)
+            if (arr.length() > 0) jsonToCommunitySettings(arr.getJSONObject(0)) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Comment: Fetch the single shared CommunitySettings row (readable by every authenticated member)
+    suspend fun dbFetchCommunitySettings(): CommunitySettings? {
+        return parseCommunitySettingsResponse(performRequest("GET", "community_settings", "select=*"))
+    }
+
+    /**
+     * Comment: Push the admin's central Weekly Savings Goal. When this device knows the version of the shared row it
+     * last read, the write only lands while the remote row still has that version (compare-and-set), so an admin
+     * device holding a stale goal cannot overwrite a newer one set elsewhere. A device with no confirmed baseline
+     * yet creates the singleton row instead of patching it. RLS rejects all of this for non-admins.
+     * Returns the stored row, or null when the precondition failed or the request errored.
+     */
+    suspend fun dbPushCommunitySettings(weeklyGoal: Double, expectedVersion: Int): CommunitySettings? {
+        if (expectedVersion <= 0) {
+            val createBody = JSONObject().apply {
+                put("id", 1)
+                put("weekly_goal", weeklyGoal)
+            }.toString()
+            return parseCommunitySettingsResponse(performRequest("POST", "community_settings", "", createBody))
+        }
+        val body = JSONObject().apply { put("weekly_goal", weeklyGoal) }.toString()
+        return parseCommunitySettingsResponse(
+            performRequest("PATCH", "community_settings", "id=eq.1&version=eq.$expectedVersion", body)
+        )
     }
 
     // Comment: Fetch all ChangeRequests from remote database table

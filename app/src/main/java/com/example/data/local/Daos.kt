@@ -6,6 +6,7 @@ import com.example.data.model.Savings
 import com.example.data.model.AppSettings
 import com.example.data.model.ChangeRequest
 import com.example.data.model.BankDeposit
+import com.example.data.model.CommunitySettings
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -160,4 +161,19 @@ interface BankDepositDao {
         deleteBankDeposit(old)
         insertBankDeposit(new)
     }
+}
+
+/**
+ * Data Access Object for the single shared CommunitySettings row (central Weekly Savings Goal).
+ */
+@Dao
+interface CommunitySettingsDao {
+    @Query("SELECT * FROM community_settings WHERE id = 1")
+    fun getCommunitySettingsFlow(): Flow<CommunitySettings?>
+
+    @Query("SELECT * FROM community_settings WHERE id = 1")
+    suspend fun getCommunitySettingsDirect(): CommunitySettings?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateCommunitySettings(settings: CommunitySettings)
 }

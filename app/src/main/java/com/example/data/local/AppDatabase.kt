@@ -11,18 +11,20 @@ import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
 import com.example.data.model.BankDeposit
+import com.example.data.model.CommunitySettings
 
 /**
  * Room Database holder for the Swanirvor-23 application.
  * Manages tables for members, individual savings contributions, and app settings.
  */
-@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class], version = 11, exportSchema = false)
+@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class, CommunitySettings::class], version = 13, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun memberDao(): MemberDao
     abstract fun savingsDao(): SavingsDao
     abstract fun appSettingsDao(): AppSettingsDao
     abstract fun changeRequestDao(): ChangeRequestDao
     abstract fun bankDepositDao(): BankDepositDao
+    abstract fun communitySettingsDao(): CommunitySettingsDao
 
     companion object {
         @Volatile
@@ -38,7 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lexsave_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
                 .build()
                 INSTANCE = instance
                 instance
@@ -91,6 +93,27 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `bank_deposits` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `amount` REAL NOT NULL, `dateText` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `depositedById` INTEGER NOT NULL, `depositedByName` TEXT NOT NULL, `syncKey` TEXT NOT NULL)"
                 )
+            }
+        }
+
+        // Comment: Migrate Room database from version 11 to 12 by adding the shared community_settings table.
+        // It holds the single central Weekly Savings Goal row, seeded at 500৳ so a new admin can edit a value
+        // instead of a missing row. The goal moved off the per-user app_settings table, which each user owned.
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `community_settings` (`id` INTEGER NOT NULL, `weeklyGoal` REAL NOT NULL, PRIMARY KEY(`id`))"
+                )
+                db.execSQL("INSERT OR IGNORE INTO `community_settings` (`id`, `weeklyGoal`) VALUES (1, 500.0)")
+            }
+        }
+
+        // Comment: Migrate Room database from version 12 to 13 by adding the remote version stamp that guards the
+        // central Weekly Savings Goal. It records the version of the shared row this device last read (0 = never
+        // confirmed), so an admin device holding an older goal cannot overwrite a newer one.
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `community_settings` ADD COLUMN `remoteVersion` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

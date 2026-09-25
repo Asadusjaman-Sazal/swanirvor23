@@ -108,9 +108,10 @@ fun HomeScreen(viewModel: SavingsViewModel) {
         parseDateTextToMillis(s.dateText) in activeCycleStartsMillis..activeCycleEndsMillis
     }
 
-    // Comment: Derive Personal Dashboard totals from the elapsed savings cycles and the Weekly Savings Goal.
+    // Comment: Derive Personal Dashboard totals from the elapsed savings cycles and the central Weekly Savings
+    // Goal an admin sets once for the whole society, so every member projects the same savings.
     // Cycle count uses the same Sun→Sat cycle the Admin Panel "This Week's Payment" uses (community started Sun, 29 Mar 2026).
-    val weeklyGoal = appSettings.personalGoal
+    val weeklyGoal by viewModel.weeklyGoal.collectAsStateWithLifecycle()
     val elapsedCycles = getElapsedCycleCount()
     // Comment: Total Due = (cycles elapsed × weekly goal) − total savings already deposited.
     val totalDue = maxOf(0.0, (elapsedCycles * weeklyGoal) - displayTotal)
@@ -189,7 +190,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "You have missed a weekly payment. Please deposit ${appSettings.personalGoal.toInt()}৳.",
+                            text = "You have missed a weekly payment. Please deposit ${weeklyGoal.toInt()}৳.",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
                             )
@@ -477,7 +478,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                             )
                         )
                         Text(
-                            text = String.format(Locale.US, "%,.0f৳", appSettings.personalGoal),
+                            text = String.format(Locale.US, "%,.0f৳", weeklyGoal),
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = MaterialTheme.colorScheme.outline
                             )

@@ -56,6 +56,30 @@ class SupabaseClientJsonTest {
     }
 
     @Test
+    fun `community settings parse the shared row version`() {
+        val parsed = SupabaseClient.jsonToCommunitySettings(
+            JSONObject()
+                .put("id", 1)
+                .put("weekly_goal", 800.0)
+                .put("version", 4)
+        )
+
+        assertEquals(1, parsed.id)
+        assertEquals(800.0, parsed.weeklyGoal, 0.0)
+        assertEquals(4, parsed.remoteVersion)
+    }
+
+    @Test
+    fun `community settings without a row version report never confirmed`() {
+        val parsed = SupabaseClient.jsonToCommunitySettings(
+            JSONObject().put("id", 1).put("weekly_goal", 500.0)
+        )
+
+        // Comment: 0 means this device has no confirmed baseline yet, so its next write must create the row
+        assertEquals(0, parsed.remoteVersion)
+    }
+
+    @Test
     fun `savings without a sync key keeps it blank`() {
         val parsed = SupabaseClient.jsonToSavings(
             JSONObject()

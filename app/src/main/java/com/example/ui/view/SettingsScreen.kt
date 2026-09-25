@@ -72,7 +72,6 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
     val registeredEmail = currentMemberEmail ?: com.example.data.SupabaseClient.getSessionEmail().orEmpty()
 
     var isDarkMode by remember { mutableStateOf(appSettings.isDarkMode) }
-    var savingsGoalText by remember { mutableStateOf(appSettings.personalGoal.toInt().toString()) }
     var profileNameText by remember { mutableStateOf(appSettings.profileName) }
     var membershipNoText by remember { mutableStateOf(appSettings.membershipNo) }
     // Comment: The stored mobile number carries the +88 country code; the input box shows only the digits after the immutable prefix
@@ -117,7 +116,6 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
     // Synchronize states on DB flow update
     LaunchedEffect(appSettings) {
         isDarkMode = appSettings.isDarkMode
-        savingsGoalText = appSettings.personalGoal.toInt().toString()
         profileNameText = appSettings.profileName
         membershipNoText = appSettings.membershipNo
         mobileNoText = appSettings.mobileNo.removePrefix("+88")
@@ -201,64 +199,9 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
             }
         }
 
-        // --- Weekly Savings Goal SECTION (formerly Savings) ---
-        // Made into a collapsible button like the Admin panel
-        AccordionCard(
-            title = "Weekly Savings Goal",
-            icon = Icons.Default.Savings,
-            isOpen = settingsOpenSection == "savings",
-            onToggle = { toggleSettingsSection("savings") },
-            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Removed the "Personal Savings Goal" subtitle as requested by user, keeping the descriptive guide
-                Text(
-                    text = "Set your weekly target amount",
-                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                )
-
-                // Layout containing personal savings goal input and its save button to the right
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = savingsGoalText,
-                        onValueChange = {
-                            savingsGoalText = it
-                        },
-                        leadingIcon = { Text("৳", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("personal_savings_goal_input"),
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    Button(
-                        onClick = {
-                            keyboardController?.hide()
-                            focusManager.clearFocus()
-                            val amt = savingsGoalText.toDoubleOrNull()
-                            if (amt != null) {
-                                viewModel.setPersonalGoal(amt)
-                                Toast.makeText(context, "Personal goal saved successfully!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Please enter a valid amount!", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        modifier = Modifier.testTag("personal_savings_goal_save_button")
-                    ) {
-                        Text("Save")
-                    }
-                }
-            }
-        }
+        // Comment: The per-user Weekly Savings Goal section was removed from Settings on purpose: separate
+        // goals made every member project a different savings total. It now lives in Admin Panel > Weekly
+        // Savings Goal as one value for the whole society.
 
         // --- Automated Notification SECTION ---
         // Comment: Added the Automated Notification settings block directly before the Profile Information section as requested.

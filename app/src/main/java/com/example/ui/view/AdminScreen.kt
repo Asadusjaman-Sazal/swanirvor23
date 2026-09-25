@@ -52,6 +52,7 @@ import coil.compose.AsyncImage
 import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
+import com.example.data.model.WeeklyGoalUpdateResult
 import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.escapeCsv
 import com.example.util.formatToDdMmYyyy
@@ -794,6 +795,14 @@ fun AdminScreen(viewModel: SavingsViewModel) {
     val selectedBankDepositMember by viewModel.selectedMemberForBankDeposit.collectAsStateWithLifecycle()
     var bankDepositAmountText by remember { mutableStateOf("") }
     var bankDepositDateText by remember { mutableStateOf(todayDateString) }
+    // Comment: Draft for the central Weekly Savings Goal edit box; kept in sync with the shared value below
+    var weeklyGoalText by remember { mutableStateOf("") }
+    // Comment: The central goal every member's projections come from, mirrored into the edit box so the
+    // admin always sees the current society-wide value (including changes made on another device)
+    val weeklyGoal by viewModel.weeklyGoal.collectAsStateWithLifecycle()
+    LaunchedEffect(weeklyGoal) {
+        weeklyGoalText = String.format(Locale.US, "%.0f", weeklyGoal)
+    }
 
     val bankDepositCalendar = remember { Calendar.getInstance() }
     val bankDepositDatePickerDialog = remember {
@@ -1152,6 +1161,76 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             Icon(Icons.Default.RestartAlt, contentDescription = "Clear", modifier = Modifier.size(18.dp))
                             Text("Clear")
                         }
+                    }
+                }
+            }
+        }
+
+        // --- SECTION: Central Weekly Savings Goal ---
+        // Comment: One society-wide goal edited only here, so every member's Total Due and Projected Savings
+        // are calculated from the same number instead of each user's own Settings value.
+        AccordionCard(
+            title = "Weekly Savings Goal",
+            icon = Icons.Default.Savings,
+            isOpen = adminOpenSection == SavingsViewModel.SECTION_WEEKLY_GOAL,
+            onToggle = { viewModel.toggleAdminSection(SavingsViewModel.SECTION_WEEKLY_GOAL) },
+            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Applies to every member's Total Due and Projected Savings.",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                )
+
+                // Goal Amount Input
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Weekly Goal",
+                        style = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                    OutlinedTextField(
+                        value = weeklyGoalText,
+                        onValueChange = { weeklyGoalText = it },
+                        leadingIcon = { Text("৳", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("weekly_goal_input"),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                        val amt = weeklyGoalText.toDoubleOrNull()
+                        if (amt != null && amt > 0) {
+                            // Comment: Report what really happened instead of always claiming success, because a
+                            // goal can now be saved offline or be superseded by another admin's newer value
+                            viewModel.setCommunityWeeklyGoal(amt) { result ->
+                                val message = when (result) {
+                                    WeeklyGoalUpdateResult.SYNCED -> "Weekly Savings Goal updated for all members"
+                                    WeeklyGoalUpdateResult.PENDING -> "Weekly Savings Goal saved on this device — it will sync once you are online"
+                                    WeeklyGoalUpdateResult.CONFLICT -> "Another admin changed the goal first — showing their newer value"
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Please enter a valid amount!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("weekly_goal_save_button")
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
+                        Text("Save")
                     }
                 }
             }
