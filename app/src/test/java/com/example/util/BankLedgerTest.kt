@@ -55,12 +55,12 @@ class BankLedgerTest {
     }
 
     @Test
-    fun formatSerialPadsToOneBasedThreeDigits() {
-        assertEquals("#001", BankLedger.formatSerial(0))
-        assertEquals("#009", BankLedger.formatSerial(8))
-        assertEquals("#010", BankLedger.formatSerial(9))
-        assertEquals("#100", BankLedger.formatSerial(99))
-        assertEquals("#1000", BankLedger.formatSerial(999))
+    fun formatSerialIsSimpleOneBasedNumberWithDot() {
+        assertEquals("1.", BankLedger.formatSerial(0))
+        assertEquals("9.", BankLedger.formatSerial(8))
+        assertEquals("10.", BankLedger.formatSerial(9))
+        assertEquals("100.", BankLedger.formatSerial(99))
+        assertEquals("1000.", BankLedger.formatSerial(999))
     }
 
     @Test

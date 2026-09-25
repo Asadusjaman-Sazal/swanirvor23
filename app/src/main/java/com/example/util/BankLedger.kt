@@ -20,9 +20,9 @@ object BankLedger {
     fun cashInHand(totalCollected: Double, totalDeposited: Double): Double =
         totalCollected - totalDeposited
 
-    // Zero-padded ledger serial for a 0-based index, e.g. index 0 -> "#001".
+    // Simple 1-based ledger serial for a 0-based index, e.g. index 0 -> "1.".
     fun formatSerial(index: Int): String =
-        "#" + (index + 1).toString().padStart(3, '0')
+        (index + 1).toString() + "."
 
     /**
      * Ledger rows oldest-first so serials stay stable as new deposits are appended at the end.

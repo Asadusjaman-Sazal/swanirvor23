@@ -474,7 +474,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                 cv.drawText("Member Name:", 55f, 115f, labelPaint)
                                 cv.drawText(member.name, 155f, 115f, valPaint)
 
-                                cv.drawText("Membership No.:", 55f, 135f, labelPaint)
+                                cv.drawText("Membership No.", 55f, 135f, labelPaint)
                                 cv.drawText(membershipId, 155f, 135f, valPaint)
 
                                 cv.drawText("Total Savings (Period):", 350f, 115f, labelPaint)
@@ -645,7 +645,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                 canvas.drawText("Member Name:", 55f, 115f, labelPaint)
                                 canvas.drawText(member.name, 155f, 115f, valPaint)
 
-                                canvas.drawText("Membership No.:", 55f, 135f, labelPaint)
+                                canvas.drawText("Membership No.", 55f, 135f, labelPaint)
                                 canvas.drawText(membershipId, 155f, 135f, valPaint)
 
                                 canvas.drawText("Total Savings (Period):", 350f, 115f, labelPaint)
@@ -1235,7 +1235,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                         // Comment: Identify the member by their membership number rather than the
                                         // email, which is not distinctive enough to tell two members apart at a glance
                                         Text(
-                                            text = "Membership No.: ${member.membershipNo.ifBlank { "Not set" }}",
+                                            text = "Membership No. ${member.membershipNo.ifBlank { "Not set" }}",
                                             style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
                                         )
                                     }
@@ -1775,7 +1775,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                                 Text(
-                                    "Membership No.: ${m.membershipNo.ifBlank { "Not set" }}",
+                                    "Membership No. ${m.membershipNo.ifBlank { "Not set" }}",
                                     style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
                                 )
                             }
@@ -2215,7 +2215,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                 val escapedEmail = escapeCsv(member.email)
                                 val escapedMembershipNo = escapeCsv(membershipId)
 
-                                append("Member Name: $escapedName - Membership No.: $escapedMembershipNo, Email: $escapedEmail\n")
+                                append("Member Name: $escapedName - Membership No. $escapedMembershipNo, Email: $escapedEmail\n")
                                 append("Serial No., Deposit Date, Savings Amount\n")
 
                                 // Get all savings for this member, sorted by timestamp ascending

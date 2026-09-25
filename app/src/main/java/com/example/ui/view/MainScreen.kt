@@ -279,6 +279,9 @@ fun MainScreen(viewModel: SavingsViewModel) {
 fun MainAppContent(viewModel: SavingsViewModel) {
     var activeTab by remember { mutableStateOf(AppTab.Home) }
 
+    // Comment: Members Dashboard search field is hidden by default; the header search icon toggles it.
+    var showMemberSearch by remember { mutableStateOf(false) }
+
     // Comment: Settings accordion a notification tap asked to open (e.g. App Update), handed down to SettingsScreen
     var requestedSettingsSection by remember { mutableStateOf<String?>(null) }
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
@@ -454,6 +457,17 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                             }
                         }
                     }
+
+                    // Comment: Members Dashboard search toggle, placed to the right of the notification button; only shown while on the Members tab.
+                    if (activeTab == AppTab.Members) {
+                        IconButton(onClick = { showMemberSearch = !showMemberSearch }) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = if (showMemberSearch) "Hide search" else "Show search",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -518,7 +532,7 @@ fun MainAppContent(viewModel: SavingsViewModel) {
             // Comment: Ensure only permitted tabs are rendered; render HomeScreen as fallback if user tries to access Admin while non-admin
             when (activeTab) {
                 AppTab.Home -> HomeScreen(viewModel = viewModel)
-                AppTab.Members -> MembersScreen(viewModel = viewModel)
+                AppTab.Members -> MembersScreen(viewModel = viewModel, showSearch = showMemberSearch)
                 AppTab.Bank -> BankScreen(viewModel = viewModel, isAdmin = isAdmin)
                 AppTab.Admin -> {
                     if (isAdmin) {
