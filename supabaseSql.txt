@@ -276,64 +276,63 @@ CREATE POLICY "Admins can manage bank deposits" ON public.bank_deposits
     );
 
 -- ===============================================================================
--- Central Weekly Savings Goal: the society-wide goal every member's projected savings are
--- calculated from (Version: 1.0.33)
+-- Per-member Weekly Savings Goals: every member saves a different amount each week, so this shared
+-- table holds one row per member instead of one society-wide value (Version: 1.0.36)
 -- ===============================================================================
--- app_settings is private to each authenticated user, so a shared value needs its own single-row
--- table: every member reads it, only admins write it.
-CREATE TABLE IF NOT EXISTS public.community_settings (
-    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-    weekly_goal DOUBLE PRECISION NOT NULL DEFAULT 500.0,
-    -- Bumped by the trigger below on every update. Clients send the version they last read as a precondition,
-    -- so an admin device still holding an older goal cannot silently overwrite a newer one set elsewhere.
-    version INTEGER NOT NULL DEFAULT 1,
-    -- Audit trail only: which admin last changed the goal. Deliberately not referenced by any RLS policy.
-    updated_by UUID DEFAULT auth.uid(),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
+   -- app_settings is private to each authenticated user, so the shared goals need their own table: every
+   -- member reads it, only admins write it. The row is keyed by the member's lowercased email, which is the
+   -- identity members are matched on across devices, so a goal follows the member everywhere.
+   --
+   -- The table is dropped and recreated rather than altered: the old table was a singleton
+   -- (PRIMARY KEY (id) with CHECK (id = 1)), which cannot hold per-member rows, and a single society-wide value
+   -- carries no per-member information worth preserving. No rows are seeded here: a member with no row yet falls
+   -- back to the 500৳ default, and their first row is created when an admin saves their goal.
+   DROP TABLE IF EXISTS public.community_settings CASCADE;
 
--- Tables created from the earlier 1.0.33 script predate these columns, and CREATE TABLE IF NOT EXISTS
--- would leave them out, so add them explicitly. Safe to re-run: existing rows just take the defaults.
-ALTER TABLE public.community_settings
-    ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS updated_by UUID DEFAULT auth.uid(),
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL;
+   CREATE TABLE public.community_settings (
+       -- Lowercased member email: the key members are matched on across devices, so each goal follows its member
+       member_email TEXT PRIMARY KEY,
+       weekly_goal DOUBLE PRECISION NOT NULL DEFAULT 500.0,
+       -- Bumped by the trigger below on every update. Clients send the version they last read as a precondition,
+       -- so an admin device still holding an older goal cannot silently overwrite a newer one set elsewhere.
+       version INTEGER NOT NULL DEFAULT 1,
+       -- Audit trail only: which admin last changed the goal. Deliberately not referenced by any RLS policy.
+       updated_by UUID DEFAULT auth.uid(),
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+       updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+   );
 
--- Seed the single row so the goal always exists before an admin ever edits it
-INSERT INTO public.community_settings (id, weekly_goal) VALUES (1, 500.0)
-ON CONFLICT (id) DO NOTHING;
+   ALTER TABLE public.community_settings ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE public.community_settings ENABLE ROW LEVEL SECURITY;
+   -- PostgreSQL has no CREATE POLICY IF NOT EXISTS, so drop first: this keeps the whole script re-runnable
+   -- (re-running otherwise fails with 42710 "policy already exists").
+   DROP POLICY IF EXISTS "Allow read for all authenticated users" ON public.community_settings;
+   -- Every authenticated member can read the shared goals so all projections match
+   CREATE POLICY "Allow read for all authenticated users" ON public.community_settings
+       FOR SELECT TO authenticated USING (true);
 
--- PostgreSQL has no CREATE POLICY IF NOT EXISTS, so drop first: this keeps the whole script re-runnable
--- (re-running otherwise fails with 42710 "policy already exists").
-DROP POLICY IF EXISTS "Allow read for all authenticated users" ON public.community_settings;
--- Every authenticated member can read the central goal so all projections match
-CREATE POLICY "Allow read for all authenticated users" ON public.community_settings
-    FOR SELECT TO authenticated USING (true);
+   -- Only admins may change any member's goal
+   DROP POLICY IF EXISTS "Admins can manage community settings" ON public.community_settings;
+   CREATE POLICY "Admins can manage community settings" ON public.community_settings
+       FOR ALL TO authenticated USING (
+           EXISTS (
+               SELECT 1 FROM public.members
+               WHERE user_id = auth.uid() AND role = 'Admin'
+           )
+       ) WITH CHECK (
+           EXISTS (
+               SELECT 1 FROM public.members
+               WHERE user_id = auth.uid() AND role = 'Admin'
+           )
+       );
 
--- Only admins may change the central goal
-DROP POLICY IF EXISTS "Admins can manage community settings" ON public.community_settings;
-CREATE POLICY "Admins can manage community settings" ON public.community_settings
-    FOR ALL TO authenticated USING (
-        EXISTS (
-            SELECT 1 FROM public.members
-            WHERE user_id = auth.uid() AND role = 'Admin'
-        )
-    ) WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM public.members
-            WHERE user_id = auth.uid() AND role = 'Admin'
-        )
-    );
+   -- Server-side bookkeeping for the compare-and-set above: every update bumps the version and refreshes the audit
+   -- stamp, so clients can never supply (or forge) either value themselves.
+   CREATE OR REPLACE FUNCTION public.touch_community_settings()
+   RETURNS trigger
+   LANGUAGE plpgsql
+   SECURITY INVOKER
 
--- Server-side bookkeeping for the compare-and-set above: every update bumps the version and refreshes the audit
--- stamp, so clients can never supply (or forge) either value themselves.
-CREATE OR REPLACE FUNCTION public.touch_community_settings()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY INVOKER
 SET search_path = public
 AS $$
 BEGIN

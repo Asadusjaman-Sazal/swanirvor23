@@ -76,11 +76,11 @@ fun MembersScreen(viewModel: SavingsViewModel) {
 
     // Comment: Grand Total is computed from each member's already-derived totalSavings, so no new stored field or schema change is needed
     val grandTotal = filteredMembers.sumOf { it.totalSavings }
-    // Comment: Projected Grand Total sums each member's projected savings (elapsed cycles × weekly goal) using the same cycle count as the Personal Dashboard.
-    // Comment: Grand totals use the one central Weekly Savings Goal an admin sets, so all members are projected at the same rate
-    val weeklyGoal by viewModel.weeklyGoal.collectAsStateWithLifecycle()
+    // Comment: Projected Grand Total sums each member's projected savings (elapsed cycles × their own weekly goal) using the same cycle count as the Personal Dashboard.
+    // Comment: Every member saves a different amount, so each member's own goal comes from the shared table (500৳ fallback while it loads)
+    val weeklyGoals by viewModel.weeklyGoals.collectAsStateWithLifecycle()
     val elapsedCyclesForGrand = getElapsedCycleCount()
-    val projectedGrandTotal = filteredMembers.sumOf { elapsedCyclesForGrand * weeklyGoal }
+    val projectedGrandTotal = filteredMembers.sumOf { elapsedCyclesForGrand * (weeklyGoals[it.email.trim().lowercase()] ?: 500.0) }
 
     // State to hold the currently selected member for showing their savings history
     var selectedMemberForHistory by remember { mutableStateOf<Member?>(null) }
@@ -314,7 +314,8 @@ fun MembersScreen(viewModel: SavingsViewModel) {
         MemberSavingsHistoryDialog(
             member = member,
             savingsList = memberSavings,
-            weeklyGoal = weeklyGoal,
+            // Comment: The dialog reads this member's own goal from the shared table, not a society-wide value
+            weeklyGoal = weeklyGoals[member.email.trim().lowercase()] ?: 500.0,
             onDismiss = { selectedMemberForHistory = null }
         )
     }

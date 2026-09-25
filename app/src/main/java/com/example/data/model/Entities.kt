@@ -82,19 +82,21 @@ data class ChangeRequest(
 )
 
 /**
- * Entity representing the society-wide configuration shared by every member.
- * Deliberately separate from AppSettings, which is private to each authenticated user: a single
- * admin-owned row is the central source of truth for values every member's totals are derived from.
+ * Entity representing one member's Weekly Savings Goal.
+ * Every member of the collective saves a different amount each week, so instead of a single society-wide row this
+ * table holds one goal per member, keyed by the member's lowercased email (the identity members are matched on across
+ * devices). All Total Due / Projected Savings calculations read each member's own goal from this one shared table, so
+ * every device computes identical totals. Deliberately separate from AppSettings, which is private to each user.
  */
 @Entity(tableName = "community_settings")
 data class CommunitySettings(
-    // Comment: Singleton row — only id 1 exists locally (and remotely), so the value is always unique
-    @PrimaryKey val id: Int = 1,
-    // Comment: Central Weekly Savings Goal all Total Due / Projected Savings calculations use
+    // Comment: Member this goal belongs to, stored lowercased and trimmed so local rows match the remote rows across devices
+    @PrimaryKey val memberEmail: String,
+    // Comment: This member's Weekly Savings Goal; their Total Due / Projected Savings calculations use it
     val weeklyGoal: Double = 500.0,
     // Comment: Version of the remote row this goal was last read from (0 = never confirmed by the server). It is the
     // precondition sent with the next remote write, so an admin device holding an older value cannot overwrite a
-    // newer goal set on another device. The explicit default keeps the column DDL in step with migration 12->13.
+    // newer goal set on another device. The explicit default keeps the column DDL in step with migration 13->14.
     @ColumnInfo(defaultValue = "0") val remoteVersion: Int = 0
 )
 

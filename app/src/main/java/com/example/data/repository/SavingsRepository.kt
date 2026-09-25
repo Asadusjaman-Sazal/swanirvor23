@@ -39,8 +39,8 @@ class SavingsRepository(
     val appSettings: Flow<AppSettings?> = appSettingsDao.getSettingsFlow()
     val allChangeRequests: Flow<List<ChangeRequest>> = changeRequestDao.getAllChangeRequests()
     val allBankDeposits: Flow<List<BankDeposit>> = bankDepositDao.getAllBankDeposits()
-    // Comment: Shared society-wide settings (central Weekly Savings Goal) every device reads
-    val communitySettings: Flow<CommunitySettings?> = communitySettingsDao.getCommunitySettingsFlow()
+    // Comment: Shared per-member Weekly Savings Goals (one row per member) every device reads
+    val communitySettings: Flow<List<CommunitySettings>> = communitySettingsDao.getCommunitySettingsFlow()
 
     fun getSavingsForMember(memberId: Int): Flow<List<Savings>> {
         return savingsDao.getSavingsForMember(memberId)
@@ -210,37 +210,52 @@ class SavingsRepository(
     }
 
     /**
-     * Comment: Update the central Weekly Savings Goal (admin action). The local row is written first so the
-     * admin's screens update instantly, then pushed to Supabase — the RLS policy is what actually enforces
-     * that only an admin can change it, and the row's version keeps this device from overwriting a newer goal.
-     * The outcome is returned so the caller can tell the admin whether the change really reached everyone.
+     * Comment: Update the per-member Weekly Savings Goals (admin action). Members save different amounts, so the
+     * admin's draft arrives as a map of member email -> goal and each row is written and pushed on its own. The local
+     * row is written first so the admin's screens update instantly, then pushed to Supabase — the RLS policy enforces
+     * that only an admin can write, and each row's version keeps this device from overwriting a newer goal set on
+     * another device. The overall outcome is returned so the caller can tell the admin whether it reached everyone.
      */
-    suspend fun updateCommunityWeeklyGoal(goal: Double): WeeklyGoalUpdateResult = withContext(Dispatchers.IO) {
-        // Comment: Carry over the version this row was last read from; it is the precondition for the push below
-        val previousVersion = communitySettingsDao.getCommunitySettingsDirect()?.remoteVersion ?: 0
-        val updated = CommunitySettings(id = 1, weeklyGoal = goal, remoteVersion = previousVersion)
-        communitySettingsDao.insertOrUpdateCommunitySettings(updated)
+    suspend fun updateCommunityWeeklyGoals(goals: Map<String, Double>): WeeklyGoalUpdateResult = withContext(Dispatchers.IO) {
+        var allSynced = true
+        var conflict = false
 
-        // Comment: Without a session there is nothing to push to, so the edit stays local until a sync can retry it
-        if (com.example.data.SupabaseClient.getAccessToken() == null) {
-            return@withContext WeeklyGoalUpdateResult.PENDING
+        for ((rawEmail, goal) in goals) {
+            val email = rawEmail.trim().lowercase()
+            if (email.isBlank()) continue
+
+            // Comment: Carry over the version this member's row was last read from; it is the precondition for the push
+            val previousVersion = communitySettingsDao.getCommunitySettingsForMember(email)?.remoteVersion ?: 0
+            val updated = CommunitySettings(memberEmail = email, weeklyGoal = goal, remoteVersion = previousVersion)
+            communitySettingsDao.insertOrUpdateCommunitySettings(updated)
+
+            // Comment: Without a session there is nothing to push to, so the edit stays local until a later sync retries it
+            if (com.example.data.SupabaseClient.getAccessToken() == null) {
+                allSynced = false
+                continue
+            }
+
+            val stored = com.example.data.SupabaseClient.dbPushCommunitySettings(updated)
+            if (stored != null) {
+                communitySettingsDao.insertOrUpdateCommunitySettings(stored)
+                continue
+            }
+
+            // Comment: A rejected push is either a lost race or a transient error, so re-read this member's row: only a
+            // version that moved on since this device last synced proves another admin changed that goal first, in which
+            // case the newer central value is adopted here instead of being reverted by this device.
+            val latestRemote = com.example.data.SupabaseClient.dbFetchCommunitySettingsForMember(email)
+            if (latestRemote != null && latestRemote.remoteVersion != previousVersion) {
+                communitySettingsDao.insertOrUpdateCommunitySettings(latestRemote)
+                conflict = true
+            }
+            allSynced = false
         }
 
-        val stored = com.example.data.SupabaseClient.dbPushCommunitySettings(goal, previousVersion)
-        if (stored != null) {
-            communitySettingsDao.insertOrUpdateCommunitySettings(stored)
-            return@withContext WeeklyGoalUpdateResult.SYNCED
-        }
-
-        // Comment: A rejected push is either a lost race or a transient error, so re-read the remote row: only a
-        // version that moved on since this device last synced proves another admin changed the goal first, in which
-        // case the newer central value is adopted here instead of being reverted by this device.
-        val latestRemote = com.example.data.SupabaseClient.dbFetchCommunitySettings()
-        if (latestRemote != null && latestRemote.remoteVersion != previousVersion) {
-            communitySettingsDao.insertOrUpdateCommunitySettings(latestRemote)
-            WeeklyGoalUpdateResult.CONFLICT
-        } else {
-            WeeklyGoalUpdateResult.PENDING
+        when {
+            conflict -> WeeklyGoalUpdateResult.CONFLICT
+            allSynced -> WeeklyGoalUpdateResult.SYNCED
+            else -> WeeklyGoalUpdateResult.PENDING
         }
     }
 
@@ -289,11 +304,8 @@ class SavingsRepository(
             e.printStackTrace()
         }
 
-        // Comment: Seed the singleton community settings row so the central Weekly Savings Goal always has
-        // a value to read, including on a fresh install that has never synced with Supabase.
-        if (communitySettingsDao.getCommunitySettingsDirect() == null) {
-            communitySettingsDao.insertOrUpdateCommunitySettings(CommunitySettings(id = 1, weeklyGoal = 500.0))
-        }
+        // Comment: No per-member Weekly Savings Goal rows are seeded here: a member with no row simply falls back to
+        // the 500৳ default, and real rows arrive from Supabase or are created the first time an admin saves their goal.
 
         val currentSettings = appSettingsDao.getSettingsDirect()
         if (currentSettings == null) {
@@ -681,9 +693,11 @@ class SavingsRepository(
                 com.example.data.SupabaseClient.dbUpsertSettings(localSettings)
             }
 
-            // --- 3b. Sync Community Settings (central Weekly Savings Goal) ---
-            val remoteCommunitySettings = com.example.data.SupabaseClient.dbFetchCommunitySettings()
-            val localCommunitySettings = communitySettingsDao.getCommunitySettingsDirect()
+            // --- 3b. Sync Community Settings (per-member Weekly Savings Goals) ---
+            val remoteGoals = com.example.data.SupabaseClient.dbFetchCommunitySettings()
+            val localGoals = communitySettingsDao.getAllCommunitySettingsDirect()
+            val remoteGoalsByEmail = remoteGoals.associateBy { it.memberEmail }
+            val localGoalsByEmail = localGoals.associateBy { it.memberEmail }
 
             // Comment: Identify the admin from the member list already fetched for this sync (no extra query)
             val sessionEmail = com.example.data.SupabaseClient.getSessionEmail()
@@ -691,49 +705,50 @@ class SavingsRepository(
                 it.email.trim().equals(sessionEmail.trim(), ignoreCase = true) && it.role == "Admin"
             }
 
-            if (isCurrentUserAdmin) {
-                // Comment: The admin owns the central goal, but a write is attempted only when this device holds a
-                // goal the server does not have yet, and only while the remote row is still the version this device
-                // last read — so an admin device with a stale value can never silently revert a newer goal.
+            // Comment: Align each member's goal with the shared table. Members only ever read the central rows, so every
+            // device projects identical totals; an admin additionally pushes a goal this device holds that the server
+            // does not have yet. A row this device never confirmed (remoteVersion 0) always yields to the central value,
+            // so a fresh install can never push its 500৳ placeholder over a real goal.
+            for (remoteGoal in remoteGoals) {
+                val localGoal = localGoalsByEmail[remoteGoal.memberEmail]
                 when {
-                    localCommunitySettings == null -> if (remoteCommunitySettings != null) {
-                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteCommunitySettings)
-                    }
+                    localGoal == null ->
+                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal)
 
-                    remoteCommunitySettings == null ->
-                        // Comment: No central row yet (e.g. the SQL was not applied): create the singleton remotely so
-                        // members have something to read, and keep the local goal if that fails
-                        com.example.data.SupabaseClient.dbPushCommunitySettings(
-                            localCommunitySettings.weeklyGoal,
-                            localCommunitySettings.remoteVersion
-                        )?.let { communitySettingsDao.insertOrUpdateCommunitySettings(it) }
+                    localGoal.weeklyGoal == remoteGoal.weeklyGoal ->
+                        // Comment: Already identical, so adopt the remote row to track the latest central version
+                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal)
 
-                    localCommunitySettings.weeklyGoal == remoteCommunitySettings.weeklyGoal ->
-                        // Comment: Already identical everywhere, so adopt the remote row to track the latest central
-                        // version without writing to the server on every sync
-                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteCommunitySettings)
-
-                    else -> {
-                        val stored = com.example.data.SupabaseClient.dbPushCommunitySettings(
-                            localCommunitySettings.weeklyGoal,
-                            localCommunitySettings.remoteVersion
-                        )
+                    isCurrentUserAdmin && localGoal.remoteVersion > 0 -> {
+                        // Comment: A confirmed row that was edited offline (or failed to push) is written back using the
+                        // version this device last read as its precondition, so a stale device cannot revert a newer goal
+                        val stored = com.example.data.SupabaseClient.dbPushCommunitySettings(localGoal)
                         if (stored != null) {
                             communitySettingsDao.insertOrUpdateCommunitySettings(stored)
                         } else {
-                            // Comment: A failed push is either a lost race or a transient error, so re-read the remote
-                            // row: only a version that moved on proves another admin changed the goal, in which case
-                            // the newer value wins. Otherwise the local edit is kept so the next sync retries it.
-                            val latestRemote = com.example.data.SupabaseClient.dbFetchCommunitySettings()
-                            if (latestRemote != null && latestRemote.remoteVersion != localCommunitySettings.remoteVersion) {
+                            // Comment: A failed push is either a lost race or a transient error, so re-read this member's
+                            // row: only a version that moved on proves another admin changed that goal, in which case the
+                            // newer central value wins. Otherwise the local edit is kept so the next sync retries it.
+                            val latestRemote = com.example.data.SupabaseClient.dbFetchCommunitySettingsForMember(localGoal.memberEmail)
+                            if (latestRemote != null && latestRemote.remoteVersion != localGoal.remoteVersion) {
                                 communitySettingsDao.insertOrUpdateCommunitySettings(latestRemote)
                             }
                         }
                     }
+
+                    else ->
+                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal)
                 }
-            } else if (remoteCommunitySettings != null) {
-                // Comment: Members only read the central goal, so every device shows identical projections
-                communitySettingsDao.insertOrUpdateCommunitySettings(remoteCommunitySettings)
+            }
+
+            // Comment: Publish any goal the admin set for a member that has no central row yet (a brand-new member, or
+            // an edit made offline), so the member reads the goal the admin chose instead of the 500৳ fallback
+            if (isCurrentUserAdmin) {
+                for (localGoal in localGoals) {
+                    if (remoteGoalsByEmail.containsKey(localGoal.memberEmail)) continue
+                    com.example.data.SupabaseClient.dbPushCommunitySettings(localGoal)
+                        ?.let { communitySettingsDao.insertOrUpdateCommunitySettings(it) }
+                }
             }
 
             // --- 4. Sync Change Requests ---
