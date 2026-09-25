@@ -346,7 +346,7 @@ fun MemberSavingsHistoryDialog(
         .filter { isCurrentMonth(it.dateText) }
         .sumOf { it.amount }
 
-    // Comment: Per-member due/projected use the same cycle count and central Weekly Savings Goal as the Personal Dashboard (community started Sun, 29 Mar 2026).
+    // Comment: Per-member due/projected use the same cycle count and central Weekly Savings Goal as the Personal Dashboard (community started on the cycle opening Fri, 27 Mar 2026).
     val memberWeeklyGoal = weeklyGoal
     val memberElapsedCycles = getElapsedCycleCount()
     val memberTotalDue = maxOf(0.0, (memberElapsedCycles * memberWeeklyGoal) - member.totalSavings)

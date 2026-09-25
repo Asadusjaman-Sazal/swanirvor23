@@ -61,65 +61,52 @@ fun isCurrentMonth(dateText: String): Boolean {
     }
 }
 
-// Get Sunday (00:00) to Saturday (23:59) range of the previous week
+// Get Friday (00:00) to Thursday (23:59) range of the previous cycle
 fun getPreviousCycleRange(): Pair<Long, Long> {
     val cal = Calendar.getInstance()
-    cal.add(Calendar.WEEK_OF_YEAR, -1)
-
-    // Comment: Calculate deterministic Sunday and Saturday by using explicit day offsets to avoid locale-specific Calendar bugs
-    val currentDayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-
-    val sundayCal = cal.clone() as Calendar
-    sundayCal.add(Calendar.DAY_OF_YEAR, -(currentDayOfWeek - Calendar.SUNDAY))
-    sundayCal.set(Calendar.HOUR_OF_DAY, 0)
-    sundayCal.set(Calendar.MINUTE, 0)
-    sundayCal.set(Calendar.SECOND, 0)
-    sundayCal.set(Calendar.MILLISECOND, 0)
-
-    val saturdayCal = cal.clone() as Calendar
-    saturdayCal.add(Calendar.DAY_OF_YEAR, Calendar.SATURDAY - currentDayOfWeek)
-    saturdayCal.set(Calendar.HOUR_OF_DAY, 23)
-    saturdayCal.set(Calendar.MINUTE, 59)
-    saturdayCal.set(Calendar.SECOND, 59)
-    saturdayCal.set(Calendar.MILLISECOND, 999)
-
-    return Pair(sundayCal.timeInMillis, saturdayCal.timeInMillis)
+    // Comment: Step back exactly one week (7 days) from today, then snap to that cycle's Friday via the shared helper.
+    cal.add(Calendar.DAY_OF_YEAR, -7)
+    return fridayToThursdayRangeFor(cal)
 }
 
-// Get Sunday (00:00) to Saturday (23:59) range of the current week
-fun getCurrentCycleRange(): Pair<Long, Long> {
-    val cal = Calendar.getInstance()
+// Get Friday (00:00) to Thursday (23:59) range of the current cycle
+fun getCurrentCycleRange(): Pair<Long, Long> = fridayToThursdayRangeFor(Calendar.getInstance())
 
-    // Comment: Calculate deterministic Sunday and Saturday by using explicit day offsets to avoid locale-specific Calendar bugs
+// Comment: Every savings cycle now runs Friday → Thursday. Calculate the deterministic Friday start and Thursday end by using explicit day offsets to avoid locale-specific Calendar bugs (devices whose first day of week is Monday or Saturday).
+private fun fridayToThursdayRangeFor(cal: Calendar): Pair<Long, Long> {
     val currentDayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+    // Comment: Number of days to step back to reach this cycle's Friday, which opens the cycle at 00:00.
+    val daysSinceFriday = (currentDayOfWeek - Calendar.FRIDAY + 7) % 7
 
-    val sundayCal = cal.clone() as Calendar
-    sundayCal.add(Calendar.DAY_OF_YEAR, -(currentDayOfWeek - Calendar.SUNDAY))
-    sundayCal.set(Calendar.HOUR_OF_DAY, 0)
-    sundayCal.set(Calendar.MINUTE, 0)
-    sundayCal.set(Calendar.SECOND, 0)
-    sundayCal.set(Calendar.MILLISECOND, 0)
+    val fridayCal = cal.clone() as Calendar
+    fridayCal.add(Calendar.DAY_OF_YEAR, -daysSinceFriday)
+    fridayCal.set(Calendar.HOUR_OF_DAY, 0)
+    fridayCal.set(Calendar.MINUTE, 0)
+    fridayCal.set(Calendar.SECOND, 0)
+    fridayCal.set(Calendar.MILLISECOND, 0)
 
-    val saturdayCal = cal.clone() as Calendar
-    saturdayCal.add(Calendar.DAY_OF_YEAR, Calendar.SATURDAY - currentDayOfWeek)
-    saturdayCal.set(Calendar.HOUR_OF_DAY, 23)
-    saturdayCal.set(Calendar.MINUTE, 59)
-    saturdayCal.set(Calendar.SECOND, 59)
-    saturdayCal.set(Calendar.MILLISECOND, 999)
+    // Comment: The cycle closes on the following Thursday (Friday + 6 days) at 23:59:59.999.
+    val thursdayCal = fridayCal.clone() as Calendar
+    thursdayCal.add(Calendar.DAY_OF_YEAR, 6)
+    thursdayCal.set(Calendar.HOUR_OF_DAY, 23)
+    thursdayCal.set(Calendar.MINUTE, 59)
+    thursdayCal.set(Calendar.SECOND, 59)
+    thursdayCal.set(Calendar.MILLISECOND, 999)
 
-    return Pair(sundayCal.timeInMillis, saturdayCal.timeInMillis)
+    return Pair(fridayCal.timeInMillis, thursdayCal.timeInMillis)
 }
 
-// The savings community began on Sunday, 29 March 2026 — the first Sun→Sat cycle starts here.
+// The savings community began on Sunday, 29 March 2026; under the Friday→Thursday cycle that date belongs to the first cycle, which opens on Friday, 27 March 2026.
 private val COMMUNITY_START_MILLIS: Long = Calendar.getInstance().apply {
-    set(2026, Calendar.MARCH, 29, 0, 0, 0)
+    set(2026, Calendar.MARCH, 27, 0, 0, 0)
     set(Calendar.MILLISECOND, 0)
 }.timeInMillis
 
-// Comment: Count how many savings cycles (Sun→Sat weeks) have elapsed from the community start up to and including the current active cycle. Used for "Total Due" and "Total Projected Savings" on the Personal Dashboard.
+// Comment: Count how many savings cycles (Fri→Thu weeks) have elapsed from the community start up to and including the current active cycle. Used for "Total Due" and "Total Projected Savings" on the Personal Dashboard.
 fun getElapsedCycleCount(): Int {
-    val (currentSunday, _) = getCurrentCycleRange()
-    val weeksSinceStart = ((currentSunday - COMMUNITY_START_MILLIS) / (7L * 24 * 60 * 60 * 1000)).toInt()
+    val (currentCycleStart, _) = getCurrentCycleRange()
+    // Comment: Round to the nearest week so a daylight-saving hour shift never truncates the count down by one cycle.
+    val weeksSinceStart = Math.round((currentCycleStart - COMMUNITY_START_MILLIS).toDouble() / (7L * 24 * 60 * 60 * 1000)).toInt()
     // Comment: Add 1 so the starting cycle itself is counted (week 0 since start === cycle 1), and never return less than 1.
     return maxOf(1, weeksSinceStart + 1)
 }
