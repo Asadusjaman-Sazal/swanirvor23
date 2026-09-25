@@ -527,12 +527,13 @@ fun MemberSavingsHistoryDialog(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 )
 
-                // Scrollable deposit history ledger list; the 10% larger height gives the history dialog more vertical room.
+                // Scrollable deposit history ledger list; it claims the space above the Close button so the dialog
+                // shows more deposits instead of leaving a blank gap that used to hide the last entries.
                 if (savingsList.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(132.dp),
+                            .weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -544,7 +545,7 @@ fun MemberSavingsHistoryDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 264.dp)
+                            .weight(1f)
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -601,8 +602,6 @@ fun MemberSavingsHistoryDialog(
                         }
                     }
                 }
-
-                    Spacer(modifier = Modifier.weight(1f))
 
                     // Close Action Button stays at the bottom of the 95% dialog window.
                     Button(

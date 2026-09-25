@@ -37,3 +37,6 @@ ongoing_fixes.txt
 # Release build outputs
 app/release/
 /app/release
+app/release/baselineProfiles/0/app-release.dm
+app/release/baselineProfiles/1/app-release.dm
+app/release/output-metadata.json
