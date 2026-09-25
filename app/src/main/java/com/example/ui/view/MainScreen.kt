@@ -412,7 +412,7 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                     )
                 },
                 actions = {
-                    // Comment: Add a manual sync button to the left side of notification button in the app header
+                    // Comment: Manual sync button in the app header (was placed to the left of the since-removed notification button)
                     IconButton(
                         onClick = {
                             viewModel.triggerManualSync { success, message ->
@@ -436,31 +436,15 @@ fun MainAppContent(viewModel: SavingsViewModel) {
                         }
                     }
 
-                    IconButton(onClick = {
-                        // Comment: As per user instructions, do not show any toast notifications or red badge on notification click
-                    }) {
-                        Box {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = "Notifications",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            // Comment: Dynamically display a red dot over the notification icon for Admins if there are pending change requests
-                            val hasPendingRequests = changeRequests.any { it.status == "Pending" }
-                            if (isAdmin && hasPendingRequests) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .background(Color.Red, shape = CircleShape)
-                                        .align(Alignment.TopEnd)
-                                )
-                            }
-                        }
-                    }
-
-                    // Comment: Members Dashboard search toggle, placed to the right of the notification button; only shown while on the Members tab.
+                    // Comment: Members Dashboard search toggle; shown while on the Members tab. (Notification icon removed from the header per user request.)
                     if (activeTab == AppTab.Members) {
-                        IconButton(onClick = { showMemberSearch = !showMemberSearch }) {
+                        IconButton(onClick = {
+                            // Comment: Hiding the field also clears the query so the member list is never left filtered by an invisible search
+                            if (showMemberSearch) {
+                                viewModel.updateMemberSearchQuery("")
+                            }
+                            showMemberSearch = !showMemberSearch
+                        }) {
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = if (showMemberSearch) "Hide search" else "Show search",

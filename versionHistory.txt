@@ -1,4 +1,4 @@
-Current Version: 1.0.42
+Current Version: 1.0.46
 -----------------------
 
 Version History:
@@ -112,3 +112,7 @@ Version: 1.0.39 - Fixed the Members Dashboard savings-history popup showing only
 Version: 1.0.40 - Changed the weekly payment cycle from Sunday-to-Saturday to Friday-to-Thursday (e.g. 18/09/2026 - 24/09/2026) across the Admin Panel "This Week's Payment" section and every place that uses the cycle: the cycle-range helpers now open on Friday 00:00 and close on Thursday 23:59, and the elapsed-cycle anchor moved to the Friday cycle start (27 Mar 2026), so Total Due, Projected Savings, the current/last week filters, and the paid/unpaid status all follow the new count.
 Version: 1.0.41 - Personal Dashboard: the "missed a weekly payment" ALERT card now appears only when the member has no savings entry dated within the previous Friday-to-Thursday cycle, instead of whenever the current active cycle is unpaid, so the warning no longer shows mid-cycle before the member has had a chance to contribute.
 Version: 1.0.42 - Members Dashboard gained a search icon in the app header (right of the notification bell, shown only on the Members tab) that shows or hides the "Search members by name..." field, which now starts hidden. Bank Deposits Deposit History lost the green circular "#001" badge: each row now shows a plain black "1. 2. 3." serial in the same color as the depositor's name.
+Version: 1.0.43 - Hiding the Members Dashboard search field from the header search button now also clears the active search query, so the member list is never left filtered by an invisible search; the full list returns the moment the field is hidden.
+Version: 1.0.44 - Removed the notification bell icon from the app header (TopAppBar actions) shown on every screen.
+Version: 1.0.45 - Admin Panel > Members Management: members are now listed alphabetically (case-insensitive, matching the Members Dashboard), a "Total Members = N" count is shown after the last row, and the Member/Admin role badge is scaled 35% smaller.
+Version: 1.0.46 - Admin Panel > Members Management: the smaller Member/Admin role badge is now drawn at 65% with a real smaller layout size (nothing is scaled in place any more), so the member rows no longer reserve the full-size badge footprint, and the "Total Members = N" line is left-aligned to line up with the member names.
