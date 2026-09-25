@@ -224,9 +224,21 @@ class SavingsRepository(
             val email = rawEmail.trim().lowercase()
             if (email.isBlank()) continue
 
+            // Comment: Stamp the row with the member's id and name, because the email alone does not tell an admin
+            // (or another device reading the shared table) whose goal a row holds
+            val member = memberDao.getMemberByEmail(email)
+
             // Comment: Carry over the version this member's row was last read from; it is the precondition for the push
-            val previousVersion = communitySettingsDao.getCommunitySettingsForMember(email)?.remoteVersion ?: 0
-            val updated = CommunitySettings(memberEmail = email, weeklyGoal = goal, remoteVersion = previousVersion)
+            val previousRow = communitySettingsDao.getCommunitySettingsForMember(email)
+            val previousVersion = previousRow?.remoteVersion ?: 0
+            val updated = CommunitySettings(
+                memberEmail = email,
+                weeklyGoal = goal,
+                // Comment: Fall back to whatever identity the row already holds if the member is not resolvable here
+                memberId = member?.id ?: previousRow?.memberId ?: 0,
+                memberName = member?.name ?: previousRow?.memberName ?: "",
+                remoteVersion = previousVersion
+            )
             communitySettingsDao.insertOrUpdateCommunitySettings(updated)
 
             // Comment: Without a session there is nothing to push to, so the edit stays local until a later sync retries it
@@ -716,8 +728,9 @@ class SavingsRepository(
                         communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal)
 
                     localGoal.weeklyGoal == remoteGoal.weeklyGoal ->
-                        // Comment: Already identical, so adopt the remote row to track the latest central version
-                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal)
+                        // Comment: Already identical, so adopt the remote row to track the latest central version while
+                        // keeping this device's member id/name for a central row that predates those columns
+                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal.withLocalIdentityFallback(localGoal))
 
                     isCurrentUserAdmin && localGoal.remoteVersion > 0 -> {
                         // Comment: A confirmed row that was edited offline (or failed to push) is written back using the
@@ -737,7 +750,7 @@ class SavingsRepository(
                     }
 
                     else ->
-                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal)
+                        communitySettingsDao.insertOrUpdateCommunitySettings(remoteGoal.withLocalIdentityFallback(localGoal))
                 }
             }
 
@@ -807,6 +820,19 @@ class SavingsRepository(
             Log.e("SupabaseSync", "Error during database bidirectional synchronization", e)
             emptyList()
         }
+    }
+
+    /**
+     * Comment: Keep this device's member id/name on a Weekly Savings Goal when the central row does not carry them, so
+     * adopting a central goal never blanks the owner details this device already knows. A local row is absent for the
+     * first central row of a member, in which case the central values are used as-is.
+     */
+    private fun CommunitySettings.withLocalIdentityFallback(local: CommunitySettings?): CommunitySettings {
+        if (local == null) return this
+        return copy(
+            memberId = if (memberId != 0) memberId else local.memberId,
+            memberName = memberName.ifBlank { local.memberName }
+        )
     }
 
     /**

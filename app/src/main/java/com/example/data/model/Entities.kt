@@ -85,13 +85,22 @@ data class ChangeRequest(
  * Entity representing one member's Weekly Savings Goal.
  * Every member of the collective saves a different amount each week, so instead of a single society-wide row this
  * table holds one goal per member, keyed by the member's lowercased email (the identity members are matched on across
- * devices). All Total Due / Projected Savings calculations read each member's own goal from this one shared table, so
+ * devices). Each row also carries the owning member's id and name, because an email alone does not reliably identify
+ * the user. All Total Due / Projected Savings calculations read each member's own goal from this one shared table, so
  * every device computes identical totals. Deliberately separate from AppSettings, which is private to each user.
  */
 @Entity(tableName = "community_settings")
 data class CommunitySettings(
     // Comment: Member this goal belongs to, stored lowercased and trimmed so local rows match the remote rows across devices
     @PrimaryKey val memberEmail: String,
+    // Comment: Id of the member this goal belongs to, stored alongside the email so a row identifies its owner without
+    // having to resolve the email. 0 means the owner was not resolved yet (for example a row written before this column
+    // existed), and the explicit default keeps the column DDL in step with migration 14->15.
+    @ColumnInfo(defaultValue = "0") val memberId: Int = 0,
+    // Comment: Display name of the member (denormalized like Savings.memberName) so anyone inspecting the shared table
+    // can see whose goal a row holds; blank means the name was not resolved yet. The explicit default keeps the column
+    // DDL in step with migration 14->15.
+    @ColumnInfo(defaultValue = "") val memberName: String = "",
     // Comment: This member's Weekly Savings Goal; their Total Due / Projected Savings calculations use it
     val weeklyGoal: Double = 500.0,
     // Comment: Version of the remote row this goal was last read from (0 = never confirmed by the server). It is the
