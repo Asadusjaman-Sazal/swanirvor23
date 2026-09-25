@@ -278,20 +278,24 @@ CREATE POLICY "Admins can manage bank deposits" ON public.bank_deposits
 -- ===============================================================================
 -- Per-member Weekly Savings Goals: every member saves a different amount each week, so this shared
 -- table holds one row per member instead of one society-wide value (Version: 1.0.36)
+--
+-- This section is additive and re-runnable: the table is created only if missing and later additions are applied
+-- with ADD COLUMN IF NOT EXISTS, so re-running the script preserves the goals members already have (Version: 1.0.38)
 -- ===============================================================================
    -- app_settings is private to each authenticated user, so the shared goals need their own table: every
    -- member reads it, only admins write it. The row is keyed by the member's lowercased email, which is the
    -- identity members are matched on across devices, so a goal follows the member everywhere.
    --
-   -- The table is dropped and recreated rather than altered: the old table was a singleton
-   -- (PRIMARY KEY (id) with CHECK (id = 1)), which cannot hold per-member rows, and a single society-wide value
-   -- carries no per-member information worth preserving. No rows are seeded here: a member with no row yet falls
-   -- back to the 500৳ default, and their first row is created when an admin saves their goal.
-   DROP TABLE IF EXISTS public.community_settings CASCADE;
-
-   CREATE TABLE public.community_settings (
+   -- No rows are seeded here: a member with no row yet falls back to the 500৳ default, and their first row is
+   -- created when an admin saves their goal.
+   CREATE TABLE IF NOT EXISTS public.community_settings (
        -- Lowercased member email: the key members are matched on across devices, so each goal follows its member
        member_email TEXT PRIMARY KEY,
+       -- The owning member's id and display name, stored next to the email because an email alone is not enough to
+       -- identify the user. Deliberately not a foreign key: the email stays the row key, so no constraint may reject
+       -- a row whose owner id has not been resolved yet (0 / '' by default).
+       member_id INTEGER NOT NULL DEFAULT 0,
+       member_name TEXT NOT NULL DEFAULT '',
        weekly_goal DOUBLE PRECISION NOT NULL DEFAULT 500.0,
        -- Bumped by the trigger below on every update. Clients send the version they last read as a precondition,
        -- so an admin device still holding an older goal cannot silently overwrite a newer one set elsewhere.
@@ -301,6 +305,10 @@ CREATE POLICY "Admins can manage bank deposits" ON public.bank_deposits
        created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
        updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
    );
+
+   -- Identifying columns for tables created before they existed (idempotent, so the section stays re-runnable)
+   ALTER TABLE public.community_settings ADD COLUMN IF NOT EXISTS member_id INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE public.community_settings ADD COLUMN IF NOT EXISTS member_name TEXT NOT NULL DEFAULT '';
 
    ALTER TABLE public.community_settings ENABLE ROW LEVEL SECURITY;
 

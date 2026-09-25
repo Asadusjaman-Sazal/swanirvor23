@@ -1189,11 +1189,6 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Each member's goal drives their own Total Due and Projected Savings. Tap a member to edit their amount, then Save once for the whole list.",
-                    style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                )
-
                 if (members.isEmpty()) {
                     Text(
                         text = "No members yet. Add a member to set their weekly goal.",
@@ -1237,8 +1232,10 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                             text = member.name,
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                                         )
+                                        // Comment: Identify the member by their membership number rather than the
+                                        // email, which is not distinctive enough to tell two members apart at a glance
                                         Text(
-                                            text = member.email,
+                                            text = "Membership No.: ${member.membershipNo.ifBlank { "Not set" }}",
                                             style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
                                         )
                                     }

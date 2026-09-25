@@ -17,7 +17,7 @@ import com.example.data.model.CommunitySettings
  * Room Database holder for the Swanirvor-23 application.
  * Manages tables for members, individual savings contributions, and app settings.
  */
-@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class, CommunitySettings::class], version = 14, exportSchema = false)
+@Database(entities = [Member::class, Savings::class, AppSettings::class, ChangeRequest::class, BankDeposit::class, CommunitySettings::class], version = 15, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun memberDao(): MemberDao
     abstract fun savingsDao(): SavingsDao
@@ -40,7 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lexsave_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .build()
                 INSTANCE = instance
                 instance
@@ -134,6 +134,22 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE `community_settings`")
                 db.execSQL("ALTER TABLE `community_settings_new` RENAME TO `community_settings`")
+            }
+        }
+
+        // Comment: Migrate Room database from version 14 to 15 by storing the owning member's id and display name on
+        // every Weekly Savings Goal row, because the email alone does not identify the member well enough. Both columns
+        // are additive with defaults, so existing rows survive; they are then backfilled from the shared members table
+        // (case-insensitive on the email) so rows written before this column existed carry the same identity as new ones.
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `community_settings` ADD COLUMN `memberId` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `community_settings` ADD COLUMN `memberName` TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "UPDATE `community_settings` SET " +
+                        "`memberId` = COALESCE((SELECT `id` FROM `members` WHERE lower(trim(`email`)) = `community_settings`.`memberEmail` LIMIT 1), 0), " +
+                        "`memberName` = COALESCE((SELECT `name` FROM `members` WHERE lower(trim(`email`)) = `community_settings`.`memberEmail` LIMIT 1), '')"
+                )
             }
         }
     }

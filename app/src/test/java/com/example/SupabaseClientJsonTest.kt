@@ -71,6 +71,33 @@ class SupabaseClientJsonTest {
     }
 
     @Test
+    fun `community settings carry the owning member id and name`() {
+        val parsed = SupabaseClient.jsonToCommunitySettings(
+            JSONObject()
+                .put("member_email", "asad@example.com")
+                .put("member_id", 42)
+                .put("member_name", "Asad")
+                .put("weekly_goal", 800.0)
+                .put("version", 2)
+        )
+
+        // Comment: The row identifies its owner by id and name as well as the email, which alone is not distinctive
+        assertEquals(42, parsed.memberId)
+        assertEquals("Asad", parsed.memberName)
+    }
+
+    @Test
+    fun `community settings without member identity leave it unresolved`() {
+        val parsed = SupabaseClient.jsonToCommunitySettings(
+            JSONObject().put("member_email", "asad@example.com").put("weekly_goal", 500.0)
+        )
+
+        // Comment: 0 / blank means a central row written before these columns existed, so the local identity is kept
+        assertEquals(0, parsed.memberId)
+        assertEquals("", parsed.memberName)
+    }
+
+    @Test
     fun `community settings without a row version report never confirmed`() {
         val parsed = SupabaseClient.jsonToCommunitySettings(
             JSONObject().put("member_email", "asad@example.com").put("weekly_goal", 500.0)

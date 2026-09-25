@@ -23,6 +23,11 @@ interface MemberDao {
     @Query("SELECT * FROM members WHERE id = :id")
     suspend fun getMemberById(id: Int): Member?
 
+    // Comment: Resolve a member case-insensitively from an email, so a Weekly Savings Goal row (keyed by the lowercased
+    // email) can record the member's id and name along with the goal
+    @Query("SELECT * FROM members WHERE lower(trim(email)) = lower(trim(:email)) LIMIT 1")
+    suspend fun getMemberByEmail(email: String): Member?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMember(member: Member): Long
 

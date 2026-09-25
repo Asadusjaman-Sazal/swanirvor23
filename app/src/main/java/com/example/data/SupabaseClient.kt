@@ -926,6 +926,10 @@ object SupabaseClient {
         return CommunitySettings(
             // Comment: Lowercased and trimmed so a local row matches its remote row no matter how the email was typed
             memberEmail = json.optString("member_email").trim().lowercase(),
+            // Comment: Identify the row's owner by more than the email: 0 / blank means the central row predates these
+            // columns, and callers then keep this device's own member id and name
+            memberId = json.optInt("member_id", 0),
+            memberName = json.optString("member_name", ""),
             weeklyGoal = json.optDouble("weekly_goal", 500.0),
             // Comment: The server-owned row version is the precondition for the next write; 0 means this device has
             // never had a confirmed value from the server, so it must create the row rather than patch it
@@ -977,6 +981,10 @@ object SupabaseClient {
             val createBody = JSONObject().apply {
                 put("member_email", email)
                 put("weekly_goal", settings.weeklyGoal)
+                // Comment: Carry the member's id and name on the row so the shared table identifies its owner by more
+                // than the email, which alone is not distinctive enough to tell members apart
+                put("member_id", settings.memberId)
+                put("member_name", settings.memberName)
             }.toString()
             return parseCommunitySettingsResponse(
                 performRequest(
@@ -988,7 +996,13 @@ object SupabaseClient {
                 )
             ).firstOrNull()
         }
-        val body = JSONObject().apply { put("weekly_goal", settings.weeklyGoal) }.toString()
+        // Comment: Refresh the identifying columns on every write as well, so a row created before this device knew the
+        // member's name (or one written by an older app version) does not keep a blank owner
+        val body = JSONObject().apply {
+            put("weekly_goal", settings.weeklyGoal)
+            put("member_id", settings.memberId)
+            put("member_name", settings.memberName)
+        }.toString()
         val encoded = java.net.URLEncoder.encode(email, "UTF-8")
         return parseCommunitySettingsResponse(
             performRequest("PATCH", "community_settings", "member_email=eq.$encoded&version=eq.${settings.remoteVersion}", body)
