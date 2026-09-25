@@ -65,7 +65,7 @@ import java.util.*
  * Members Dashboard Composable (Members tab)
  */
 @Composable
-fun MembersScreen(viewModel: SavingsViewModel) {
+fun MembersScreen(viewModel: SavingsViewModel, showSearch: Boolean = false) {
     val searchQuery by viewModel.memberSearchQuery.collectAsStateWithLifecycle()
     val filteredMembers by viewModel.filteredMembers.collectAsStateWithLifecycle()
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
@@ -92,28 +92,30 @@ fun MembersScreen(viewModel: SavingsViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Search bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.updateMemberSearchQuery(it) },
-            placeholder = { Text("Search members by name...") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = MaterialTheme.colorScheme.outline
-                )
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("member_search_input"),
-            shape = RoundedCornerShape(8.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                focusedBorderColor = Color(0xFF0C9488)
-            ),
-            singleLine = true
-        )
+        // Search bar (hidden by default; toggled by the search button in the app header)
+        if (showSearch) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.updateMemberSearchQuery(it) },
+                placeholder = { Text("Search members by name...") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("member_search_input"),
+                shape = RoundedCornerShape(8.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                    focusedBorderColor = Color(0xFF0C9488)
+                ),
+                singleLine = true
+            )
+        }
 
         // Members List scrollable
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -178,7 +180,7 @@ fun MembersScreen(viewModel: SavingsViewModel) {
                                             )
                                         )
                                         Text(
-                                            text = "Membership No.: ${member.membershipNo.ifBlank { "Not set" }}",
+                                            text = "Membership No. ${member.membershipNo.ifBlank { "Not set" }}",
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 color = MaterialTheme.colorScheme.outline
                                             )
@@ -399,7 +401,7 @@ fun MemberSavingsHistoryDialog(
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                             )
                             Text(
-                                text = "Membership No.: ${member.membershipNo.ifBlank { "Not set" }}",
+                                text = "Membership No. ${member.membershipNo.ifBlank { "Not set" }}",
                                 style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.outline)
                             )
                         }
