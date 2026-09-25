@@ -94,13 +94,13 @@ fun HomeScreen(viewModel: SavingsViewModel) {
     // Calculate total savings for the current month
     val currentMonthSavings = savingsList.filter { isCurrentMonth(it.dateText) }.sumOf { it.amount }
 
-    // Check the selected contribution date in the last cycle (previous week Sunday to Saturday)
-    val (lastSunday, lastSaturday) = getPreviousCycleRange()
+    // Check the selected contribution date in the last cycle (previous week Friday to Thursday)
+    val (lastCycleStart, lastCycleEnd) = getPreviousCycleRange()
     val userPaidLastCycle = savingsList.any { s ->
-        parseDateTextToMillis(s.dateText) in lastSunday..lastSaturday
+        parseDateTextToMillis(s.dateText) in lastCycleStart..lastCycleEnd
     }
 
-    // Active Cycle range (this week's Sunday 00:00 to Saturday 23:59)
+    // Active Cycle range (this cycle's Friday 00:00 to Thursday 23:59)
     val (activeCycleStartsMillis, activeCycleEndsMillis) = remember {
         getCurrentCycleRange()
     }
@@ -110,7 +110,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
 
     // Comment: Derive Personal Dashboard totals from the elapsed savings cycles and the central Weekly Savings
     // Goal an admin sets once for the whole society, so every member projects the same savings.
-    // Cycle count uses the same Sun→Sat cycle the Admin Panel "This Week's Payment" uses (community started Sun, 29 Mar 2026).
+    // Cycle count uses the same Fri→Thu cycle the Admin Panel "This Week's Payment" uses (community started on the cycle opening Fri, 27 Mar 2026).
     val weeklyGoal by viewModel.weeklyGoal.collectAsStateWithLifecycle()
     val elapsedCycles = getElapsedCycleCount()
     // Comment: Total Due = (cycles elapsed × weekly goal) − total savings already deposited.
@@ -157,8 +157,8 @@ fun HomeScreen(viewModel: SavingsViewModel) {
             }
         }
 
-        // ALERT! Card for missed payment (remains hidden when the user has an entry in the Savings History with date matching the current Active Cycle from the Admin Panel)
-        if (!userPaidCurrentActiveCycle) {
+        // ALERT! Card for missed payment (raised only when the user has no entry in the Savings History whose date falls in the previous cycle, so an ongoing current cycle never triggers it)
+        if (!userPaidLastCycle) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()

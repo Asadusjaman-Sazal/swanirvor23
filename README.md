@@ -33,7 +33,7 @@
 * **Instant Synced Profiles**: Built-in integration with Supabase Storage allows members to upload customized profile avatars with instant public URL propagation.
 
 ### 📅 Locale-Independent Weekly Financial Cycles
-* Uses explicit, custom day offsets in `Calendar` mathematics to calculate a strict **Sunday-to-Saturday weekly savings cycle**. This completely eliminates offset errors on devices set to non-US region locales (where the first day of the week is Monday or Saturday).
+* Uses explicit, custom day offsets in `Calendar` mathematics to calculate a strict **Friday-to-Thursday weekly savings cycle**. This completely eliminates offset errors on devices set to non-US region locales (where the first day of the week is Monday or Saturday).
 
 ### 🔔 Smart System Alerts & Background Notifications
 * **Scheduled Reminders**: Integrates system-level alerts matching user-configured days and times using Android's local `AlarmManager` and a `BroadcastReceiver`.

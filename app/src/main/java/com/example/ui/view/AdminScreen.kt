@@ -825,20 +825,20 @@ fun AdminScreen(viewModel: SavingsViewModel) {
         )
     }
 
-    // Active cycle Sunday to Saturday range and payment-date status calculations
-    val (currentSunday, currentSaturday) = getCurrentCycleRange()
+    // Active cycle Friday to Thursday range and payment-date status calculations
+    val (currentCycleStart, currentCycleEnd) = getCurrentCycleRange()
 
-    // Comment: Format the Starts (this week's Sunday) and Ends (this week's Saturday) dates directly from the robust currentSunday and currentSaturday timestamps
-    val activeCycleStartsText = remember(currentSunday) {
-        SimpleDateFormat("dd-MM-yyyy", Locale.US).format(Date(currentSunday))
+    // Comment: Format the Starts (this cycle's Friday) and Ends (this cycle's Thursday) dates directly from the robust currentCycleStart and currentCycleEnd timestamps
+    val activeCycleStartsText = remember(currentCycleStart) {
+        SimpleDateFormat("dd-MM-yyyy", Locale.US).format(Date(currentCycleStart))
     }
-    val activeCycleEndsText = remember(currentSaturday) {
-        SimpleDateFormat("dd-MM-yyyy", Locale.US).format(Date(currentSaturday))
+    val activeCycleEndsText = remember(currentCycleEnd) {
+        SimpleDateFormat("dd-MM-yyyy", Locale.US).format(Date(currentCycleEnd))
     }
     val paidMemberIds = members.filter { m ->
         allSavings.any { s ->
             s.memberId == m.id &&
-                    parseDateTextToMillis(s.dateText) in currentSunday..currentSaturday
+                    parseDateTextToMillis(s.dateText) in currentCycleStart..currentCycleEnd
         }
     }.map { it.id }.toSet()
 
@@ -1499,7 +1499,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                 if (selectedActiveCycleTab == "Paid") {
                                     val memberSavingsThisWeek = allSavings.filter { s ->
                                         s.memberId == m.id &&
-                                                parseDateTextToMillis(s.dateText) in currentSunday..currentSaturday
+                                                parseDateTextToMillis(s.dateText) in currentCycleStart..currentCycleEnd
                                     }
                                     val totalWeeklyAmount = memberSavingsThisWeek.sumOf { it.amount }
                                     Text(
