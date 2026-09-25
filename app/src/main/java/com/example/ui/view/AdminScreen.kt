@@ -1749,7 +1749,9 @@ fun AdminScreen(viewModel: SavingsViewModel) {
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                members.forEachIndexed { idx, m ->
+                // Comment: Sort alphabetically (case-insensitive) to match the Members Dashboard ordering
+                val sortedMembers = members.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+                sortedMembers.forEachIndexed { idx, m ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1786,13 +1788,10 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             // Role Badge (Admin / Member)
-                            AssistChip(
-                                onClick = { },
-                                label = { Text(m.role.uppercase(Locale.ROOT)) },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = if (m.role == "Admin") Color(0xFFFED488) else Color.Transparent
-                                )
-                            )
+                            // Comment: Rendered at 65% of the default chip size (smaller text, padding and height) so the
+                            // badge reserves only the layout space it actually fills instead of being scaled inside its
+                            // original bounds
+                            MemberRoleBadge(role = m.role)
 
                             // 3-dot dropdown action button per user request
                             // Allows removing the user, making them admin, or removing admin role
@@ -1907,6 +1906,23 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                             }
                         }
                     }
+                }
+
+                // Comment: Total member count shown after the last member, matching the number of listed rows;
+                // left-aligned so it lines up with the member names above it
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = "Total Members = ${sortedMembers.size}",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
             }
         }
@@ -2401,6 +2417,27 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                 }
             }
         }
+    }
+}
+
+// Comment: Compact "ADMIN" / "MEMBER" badge used by the Admin Panel member rows. It is authored at 65% of
+// the default AssistChip size (9.sp label, 6.dp horizontal / 4.dp vertical padding) on a non-clickable
+// Surface, so the layout reserves exactly the space the badge fills - scaling a chip down would have
+// left it occupying its full-size footprint.
+@Composable
+private fun MemberRoleBadge(role: String) {
+    Surface(
+        shape = CircleShape,
+        color = if (role == "Admin") Color(0xFFFED488) else Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Text(
+            text = role.uppercase(Locale.ROOT),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 9.sp, lineHeight = 12.sp),
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
