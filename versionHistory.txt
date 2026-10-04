@@ -1,4 +1,4 @@
-Current Version: 1.0.49
+Current Version: 1.0.50
 -----------------------
 
 Version History:
@@ -119,3 +119,4 @@ Version: 1.0.46 - Admin Panel > Members Management: the smaller Member/Admin rol
 Version: 1.0.47 - Members Dashboard: added a "Last Updated at: dd/MM/yyyy, h:mm am/pm" status line at the very top (before the first member) showing when the most recent member contribution was added, derived from the newest synced Savings timestamp so it reflects admin deposits from any device ("No contributions yet" until the first one).
 Version: 1.0.48 - Added Advance Savings for members who have saved more than their projection: the Personal Dashboard's Total Due card and each member's Total Due card in the Members Dashboard savings-history popup now show "Advance Savings" (total savings − cycles elapsed × weekly goal) in blue instead of red whenever that surplus is positive.
 Version: 1.0.49 - Added an About section to Settings, placed after App Update: a collapsible card (styled like the other Settings sections) showing the app logo, name, version, the "Designed & Developed By" developer card with photo, and the copyright line.
+Version: 1.0.50 - Splash screen: replaced the "Empowering Communities" watermark with a two-line "Designed & Developed by / Adv. Asadusjaman Sazal" credit.

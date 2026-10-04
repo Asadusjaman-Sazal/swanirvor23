@@ -264,13 +264,22 @@ private fun SplashScreen(onTimeout: () -> Unit) {
                 .padding(bottom = 32.dp)
                 .alpha(alpha)
         ) {
-            Text(
-                text = "Empowering Communities",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    letterSpacing = 2.sp
-                ),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Designed & Developed by",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        letterSpacing = 2.sp
+                    ),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                )
+                Text(
+                    text = "Adv. Asadusjaman Sazal",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        letterSpacing = 2.sp
+                    ),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }
