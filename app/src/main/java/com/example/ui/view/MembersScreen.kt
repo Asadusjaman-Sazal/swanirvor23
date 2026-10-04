@@ -86,12 +86,35 @@ fun MembersScreen(viewModel: SavingsViewModel, showSearch: Boolean = false) {
     var selectedMemberForHistory by remember { mutableStateOf<Member?>(null) }
     var selectedMemberForImage by remember { mutableStateOf<Member?>(null) }
 
+    // Comment: "Last Updated" is the time the most recent member contribution was added. Every Savings row
+    // stores its own timestamp when the admin saves it and those rows sync through Supabase, so the newest
+    // timestamp across all members is already the shared, synced value — no new field or schema change needed.
+    val lastUpdatedText = remember(allSavings) {
+        val latestMillis = allSavings.maxOfOrNull { it.timestamp } ?: 0L
+        if (latestMillis > 0L) {
+            SimpleDateFormat("dd/MM/yyyy, h:mm a", Locale.US).format(Date(latestMillis))
+        } else {
+            "No contributions yet"
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Comment: Status line showing when this screen's data was last refreshed
+        Text(
+            text = "Last updated at: $lastUpdatedText",
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = MaterialTheme.colorScheme.outline
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("last_updated_status")
+        )
+
         // Search bar (hidden by default; toggled by the search button in the app header)
         if (showSearch) {
             OutlinedTextField(
