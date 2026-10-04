@@ -501,6 +501,15 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
             containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
         )
 
+        // --- ABOUT SECTION ---
+        // Comment: Collapsible About section placed right after App Update, showing app identity
+        // (logo, name, version), the developer card and the copyright line.
+        AboutSection(
+            isOpen = settingsOpenSection == "about",
+            onToggle = { toggleSettingsSection("about") },
+            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+        )
+
         // Comment: Secure Sign Out button allowing users to safely log out and terminate their session
         Card(
             modifier = Modifier.fillMaxWidth(),
