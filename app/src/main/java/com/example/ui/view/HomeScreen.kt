@@ -117,6 +117,9 @@ fun HomeScreen(viewModel: SavingsViewModel) {
     val totalDue = maxOf(0.0, (elapsedCycles * weeklyGoal) - displayTotal)
     // Comment: Total Projected Savings = cycles elapsed × weekly goal (the full amount expected by now).
     val totalProjected = elapsedCycles * weeklyGoal
+    // Comment: Advance Savings = how much the member has saved beyond what is projected so far. When positive,
+    // the Total Due card is replaced by an Advance Savings card (same layout, blue instead of red).
+    val advanceSavings = maxOf(0.0, displayTotal - totalProjected)
 
     var editingSavings by remember { mutableStateOf<Savings?>(null) }
     var showDeleteConfirm by remember { mutableStateOf<Savings?>(null) }
@@ -272,16 +275,23 @@ fun HomeScreen(viewModel: SavingsViewModel) {
             }
         }
 
-        // Bento Card: Total Due (cycles elapsed × weekly goal − total savings), shown under Total Savings
+        // Bento Card: Total Due (cycles elapsed × weekly goal − total savings), shown under Total Savings.
+        // Comment: When the member has saved more than the projection so far, the same card shows Advance
+        // Savings in blue instead of Total Due in red (the surplus is total savings − projected).
+        val showAdvance = advanceSavings > 0.0
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("total_due_card"),
+                .testTag(if (showAdvance) "advance_savings_card" else "total_due_card"),
             colors = CardDefaults.cardColors(
-                containerColor = if (appSettings.isDarkMode) Color(0xFF2A1A1A) else Color(0xFFFEF2F2)
+                containerColor = if (showAdvance) {
+                    if (appSettings.isDarkMode) Color(0xFF1A2333) else Color(0xFFEFF6FF)
+                } else {
+                    if (appSettings.isDarkMode) Color(0xFF2A1A1A) else Color(0xFFFEF2F2)
+                }
             ),
             shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color(0xFFFECACA))
+            border = BorderStroke(1.dp, if (showAdvance) Color(0xFFBFDBFE) else Color(0xFFFECACA))
         ) {
             Box(
                 modifier = Modifier
@@ -297,7 +307,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "TOTAL DUE",
+                            text = if (showAdvance) "ADVANCE SAVINGS" else "TOTAL DUE",
                             style = MaterialTheme.typography.labelLarge.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -305,24 +315,28 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                             )
                         )
                         Icon(
-                            imageVector = Icons.Default.AccountBalanceWallet,
-                            contentDescription = "Total Due",
-                            tint = Color(0xFFEF4444),
+                            imageVector = if (showAdvance) Icons.Default.Savings else Icons.Default.AccountBalanceWallet,
+                            contentDescription = if (showAdvance) "Advance Savings" else "Total Due",
+                            tint = if (showAdvance) Color(0xFF2563EB) else Color(0xFFEF4444),
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
                     Text(
-                        text = String.format(Locale.US, "%,.0f৳", totalDue),
+                        text = String.format(Locale.US, "%,.0f৳", if (showAdvance) advanceSavings else totalDue),
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFEF4444),
+                            color = if (showAdvance) Color(0xFF2563EB) else Color(0xFFEF4444),
                             fontSize = 32.sp
                         )
                     )
 
                     Text(
-                        text = "$elapsedCycles ${if (elapsedCycles == 1) "week" else "weeks"} × ${weeklyGoal.toInt()}৳ − ${displayTotal.toInt()}৳",
+                        text = if (showAdvance) {
+                            "${displayTotal.toInt()}৳ − $elapsedCycles ${if (elapsedCycles == 1) "week" else "weeks"} × ${weeklyGoal.toInt()}৳"
+                        } else {
+                            "$elapsedCycles ${if (elapsedCycles == 1) "week" else "weeks"} × ${weeklyGoal.toInt()}৳ − ${displayTotal.toInt()}৳"
+                        },
                         style = MaterialTheme.typography.bodyMedium.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium

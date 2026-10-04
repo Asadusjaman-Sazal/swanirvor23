@@ -376,6 +376,9 @@ fun MemberSavingsHistoryDialog(
     val memberElapsedCycles = getElapsedCycleCount()
     val memberTotalDue = maxOf(0.0, (memberElapsedCycles * memberWeeklyGoal) - member.totalSavings)
     val memberTotalProjected = memberElapsedCycles * memberWeeklyGoal
+    // Comment: Advance Savings = how much this member has saved beyond the projection so far. When positive, the
+    // card shows Advance Savings instead of Total Due (same layout, blue instead of red).
+    val memberAdvanceSavings = maxOf(0.0, member.totalSavings - memberTotalProjected)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -500,25 +503,34 @@ fun MemberSavingsHistoryDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Total Due Summary Card
+                    // Total Due Summary Card — shows Advance Savings (blue) instead when the member has
+                    // saved more than the projection so far (member.totalSavings > memberTotalProjected)
+                    val memberShowAdvance = memberAdvanceSavings > 0.0
                     Card(
                         modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)), // Soft light red
-                        border = BorderStroke(1.dp, Color(0xFFFECACA))
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (memberShowAdvance) Color(0xFFEFF6FF) else Color(0xFFFEF2F2) // Soft light blue / red
+                        ),
+                        border = BorderStroke(1.dp, if (memberShowAdvance) Color(0xFFBFDBFE) else Color(0xFFFECACA))
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp),
                             horizontalAlignment = Alignment.Start
                         ) {
                             Text(
-                                text = "Total Due",
-                                style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFB91C1C))
+                                text = if (memberShowAdvance) "Advance Savings" else "Total Due",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = if (memberShowAdvance) Color(0xFF1D4ED8) else Color(0xFFB91C1C)
+                                )
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            // Display formatted total due as an integer value per user preference
+                            // Display formatted amount as an integer value per user preference
                             Text(
-                                text = String.format(Locale.US, "%,.0f৳", memberTotalDue),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
+                                text = String.format(Locale.US, "%,.0f৳", if (memberShowAdvance) memberAdvanceSavings else memberTotalDue),
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (memberShowAdvance) Color(0xFF2563EB) else Color(0xFFDC2626)
+                                )
                             )
                         }
                     }
