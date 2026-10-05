@@ -1,4 +1,4 @@
-Current Version: 1.0.51
+Current Version: 1.0.52
 -----------------------
 
 Version History:
@@ -121,3 +121,4 @@ Version: 1.0.48 - Added Advance Savings for members who have saved more than the
 Version: 1.0.49 - Added an About section to Settings, placed after App Update: a collapsible card (styled like the other Settings sections) showing the app logo, name, version, the "Designed & Developed By" developer card with photo, and the copyright line.
 Version: 1.0.50 - Splash screen: replaced the "Empowering Communities" watermark with a two-line "Designed & Developed by / Adv. Asadusjaman Sazal" credit.
 Version: 1.0.51 - Splash screen: split the bottom credit into three centred lines — "Designed & Developed", "by" and "Adv. Asadusjaman Sazal" — so "by" sits centre-aligned under the first line.
+Version: 1.0.52 - Splash screen: credit now says — "Developed by / Adv. Asadusjaman Sazal" credit.

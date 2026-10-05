@@ -266,14 +266,7 @@ private fun SplashScreen(onTimeout: () -> Unit) {
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "Designed & Developed",
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        letterSpacing = 2.sp
-                    ),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = "by",
+                    text = "Developed by",
                     style = MaterialTheme.typography.labelMedium.copy(
                         letterSpacing = 2.sp
                     ),
