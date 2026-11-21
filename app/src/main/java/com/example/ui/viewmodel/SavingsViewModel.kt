@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
@@ -10,13 +11,19 @@ import com.example.data.model.Savings
 import com.example.data.model.ChangeRequest
 import com.example.data.model.BankDeposit
 import com.example.data.model.WeeklyGoalUpdateResult
+import com.example.data.repository.ProfilePictureRepository
 import com.example.data.repository.SavingsRepository
 import com.example.ui.notification.AdminNotificationHelper
 import com.example.util.Constants
 import com.example.util.BankLedger
 import com.example.util.PasswordValidator
+import com.example.util.ProfileImageCrop
+import com.example.util.ProfileImageProcessor
+import com.example.util.ProfileImageResult
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * ViewModel for managing the application states, settings, and business logic.
@@ -39,6 +46,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
     private val _googleLoginError = MutableStateFlow<String?>(null)
     val googleLoginError: StateFlow<String?> = _googleLoginError.asStateFlow()
+
+    // Comment: Bumped after every local picture write or delete so the profile surfaces reload the
+    // file even though the path itself is stable. The upload never gates this state.
+    private val _profilePictureRevision = MutableStateFlow(0)
+    val profilePictureRevision: StateFlow<Int> = _profilePictureRevision.asStateFlow()
+    // Comment: Serialize picture writes so a slow background upload can never finish after a delete
+    // and resurrect the old object. The UI reports the local save before the upload starts, so this
+    // lock never makes the screen wait for the network.
+    private val profilePictureMutex = Mutex()
 
     // Comment: For backwards compatibility, get active user's ID or fallback to -1 (No User)
     val currentUserMemberId: Int get() = _currentUserId.value ?: -1
@@ -372,6 +388,15 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // Comment: Move the app-wide text step by one. Clamp here as well as on read so a caller can
+    // never store a value outside the range the layouts were measured for.
+    fun setFontSizeStep(step: Int) {
+        viewModelScope.launch {
+            val current = repository.getSettingsDirect() ?: AppSettings()
+            repository.updateSettings(current.copy(fontSizeStep = Constants.clampFontSizeStep(step)))
+        }
+    }
+
     // Comment: Every member's Weekly Savings Goal, keyed by their lowercased email, read from the single shared table
     // so the Members list, history dialogs and Admin Panel all use each member's own goal instead of one society-wide
     // value. Falls back to an empty map (callers default to 500৳) while the shared rows are still loading.
@@ -402,41 +427,134 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             val current = repository.getSettingsDirect() ?: AppSettings()
             val member = repository.getMemberById(currentUserMemberId)
 
-            var img = profileImageUrl ?: current.profileImageUrl
+            // Comment: Picture bytes are prepared and uploaded by the dedicated profile-picture flow;
+            // this method only records a public URL, or keeps the current public URL. A stale local
+            // file path is never written to the shared settings row.
+            val img = (profileImageUrl ?: current.profileImageUrl)?.takeIf { it.startsWith("http") }
+                ?: member?.avatarUrl
 
             // Comment: The input box holds digits only (the +88 prefix is shown separately), so always persist the
             // full number with the immutable country code regardless of which profile field triggered the save
             val normalizedMobileNo = if (mobileNo.isBlank() || mobileNo.startsWith("+88")) mobileNo else "+88${mobileNo.filter(Char::isDigit)}"
-
-            // Comment: If a local profile image path is provided (e.g. starts with /), upload it to Supabase Storage
-            if (profileImageUrl != null && profileImageUrl.startsWith("/")) {
-                try {
-                    val file = java.io.File(profileImageUrl)
-                    if (file.exists()) {
-                        val fileBytes = file.readBytes()
-                        // Use user email or fallback as base for file name
-                        val emailToUse = member?.email ?: com.example.data.SupabaseClient.getSessionEmail() ?: "user"
-                        val cleanedEmail = emailToUse.replace(Regex("[^a-zA-Z0-9]"), "_")
-                        val fileName = "avatar_${cleanedEmail}_${System.currentTimeMillis()}.png"
-
-                        val publicUrl = com.example.data.SupabaseClient.uploadAvatar(fileName, fileBytes)
-                        if (publicUrl != null) {
-                            img = publicUrl
-                            android.util.Log.d("ProfileImageUpload", "Successfully uploaded image to Supabase Storage: $publicUrl")
-                        } else {
-                            android.util.Log.e("ProfileImageUpload", "Failed to upload image to Supabase Storage, falling back to local path")
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("ProfileImageUpload", "Exception during profile image upload: ${e.localizedMessage}", e)
-                }
-            }
 
             repository.updateSettings(current.copy(profileName = name, membershipNo = membershipNo, profileImageUrl = img, mobileNo = normalizedMobileNo))
             // Also update current user member name, avatarUrl, membershipNo, and mobileNo in the database
             // so the shared members row (visible to admins) carries the mobile number for Call/Message actions
             if (member != null) {
                 repository.updateMember(member.copy(name = name, avatarUrl = img, membershipNo = membershipNo, mobileNo = normalizedMobileNo))
+            }
+
+            // Comment: A picture stored before the 50 KB rule gets one re-compress on its next profile save.
+            recompressExistingProfilePictureIfNeeded()
+        }
+    }
+
+    // Comment: Save the crop page's result: local file first (so it survives a restart and appears at once),
+    // then the public avatars object {user_id}.jpg in the background. The screen never waits for the upload.
+    fun saveProfilePicture(uri: Uri, crop: ProfileImageCrop, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            profilePictureMutex.withLock {
+                val app = getApplication<Application>()
+                val userId = com.example.data.SupabaseClient.getCurrentUserUuid()
+                if (userId.isNullOrBlank()) {
+                    onResult(false, ProfilePictureRepository.UNREADABLE_MESSAGE)
+                    return@withLock
+                }
+
+                when (val result = ProfileImageProcessor.processCropped(app, uri, crop)) {
+                    is ProfileImageResult.Success -> {
+                        val file = ProfilePictureRepository.localFile(app, userId)
+                        if (!ProfilePictureRepository.writeLocal(file, result.bytes)) {
+                            onResult(false, ProfilePictureRepository.UNREADABLE_MESSAGE)
+                            return@withLock
+                        }
+
+                        _profilePictureRevision.value += 1
+                        onResult(true, "Profile picture updated.")
+
+                        // Comment: Keep the previous public URL (or null) until the upload succeeds. The
+                        // device-local file above is already what the profile surface displays; a local
+                        // path must never be synced to the shared app_settings row. The upload runs in
+                        // this same locked coroutine, so a later delete cannot be overtaken by it.
+                        val settings = repository.getSettingsDirect() ?: AppSettings()
+                        val currentUrl = settings.profileImageUrl?.takeIf { it.startsWith("http") }
+                        if (currentUrl != settings.profileImageUrl) {
+                            repository.updateSettings(settings.copy(profileImageUrl = currentUrl))
+                        }
+
+                        val publicUrl = ProfilePictureRepository.upload(userId, result.bytes) ?: return@withLock
+                        val latest = repository.getSettingsDirect() ?: AppSettings()
+                        repository.updateSettings(latest.copy(profileImageUrl = publicUrl))
+                        val member = repository.getMemberById(currentUserMemberId)
+                        if (member != null) {
+                            repository.updateMember(member.copy(avatarUrl = publicUrl))
+                        }
+                        _profilePictureRevision.value += 1
+                    }
+                    ProfileImageResult.Unreadable -> onResult(false, ProfilePictureRepository.UNREADABLE_MESSAGE)
+                }
+            }
+        }
+    }
+
+    // Comment: Delete the local file and the stored {user_id}.jpg object, clear the settings/member
+    // avatar and bump the revision so the placeholder returns immediately.
+    fun deleteProfilePicture(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            profilePictureMutex.withLock {
+                val app = getApplication<Application>()
+                val userId = com.example.data.SupabaseClient.getCurrentUserUuid()
+                if (userId.isNullOrBlank()) {
+                    onResult(false, ProfilePictureRepository.UNREADABLE_MESSAGE)
+                    return@withLock
+                }
+
+                ProfilePictureRepository.deleteLocal(ProfilePictureRepository.localFile(app, userId))
+                _profilePictureRevision.value += 1
+
+                val settings = repository.getSettingsDirect() ?: AppSettings()
+                repository.updateSettings(settings.copy(profileImageUrl = null))
+                val member = repository.getMemberById(currentUserMemberId)
+                if (member != null) {
+                    repository.updateMember(member.copy(avatarUrl = null))
+                }
+
+                val remoteDeleted = ProfilePictureRepository.deleteRemote(userId)
+                if (remoteDeleted) {
+                    onResult(true, "Profile picture removed.")
+                } else {
+                    onResult(false, "Picture removed on this phone, but the stored copy could not be deleted.")
+                }
+            }
+        }
+    }
+
+    // Comment: One-time path for an older local picture over 50 KB. It re-encodes the whole image and
+    // replaces the object, without touching a newer picture the user just saved.
+    private fun recompressExistingProfilePictureIfNeeded() {
+        viewModelScope.launch {
+            profilePictureMutex.withLock {
+                val app = getApplication<Application>()
+                val userId = com.example.data.SupabaseClient.getCurrentUserUuid() ?: return@withLock
+                val file = ProfilePictureRepository.existingLocalFile(app, userId) ?: return@withLock
+                if (!ProfilePictureRepository.isOverLimit(file)) return@withLock
+
+                // Comment: Only a local-only legacy picture needs this repair. If the shared row already
+                // points at a public URL, the local file may be stale and must not overwrite that object.
+                val settings = repository.getSettingsDirect() ?: return@withLock
+                if (settings.profileImageUrl?.startsWith("http") == true) return@withLock
+
+                val bytes = ProfilePictureRepository.recompressWholeImage(app, userId) ?: return@withLock
+                if (!ProfilePictureRepository.writeLocal(file, bytes)) return@withLock
+                _profilePictureRevision.value += 1
+
+                val publicUrl = ProfilePictureRepository.upload(userId, bytes) ?: return@withLock
+                val latest = repository.getSettingsDirect() ?: AppSettings()
+                repository.updateSettings(latest.copy(profileImageUrl = publicUrl))
+                val member = repository.getMemberById(currentUserMemberId)
+                if (member != null) {
+                    repository.updateMember(member.copy(avatarUrl = publicUrl))
+                }
             }
         }
     }
@@ -978,7 +1096,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     _currentUserId.value = foundMember.id
                     // Restore the remote member avatar while rebuilding local settings after a data reset
                     val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo, profileImageUrl = foundMember.avatarUrl ?: settings.profileImageUrl))
+                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo, profileImageUrl = foundMember.avatarUrl ?: settings.profileImageUrl?.takeIf { it.startsWith("http") }))
 
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
@@ -1071,106 +1189,122 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Comment: Handle Google Login Deep Link Callback tokens, fetch user profile, create DB entry, and log in
-    fun handleGoogleLoginCallback(
-        accessToken: String,
-        refreshToken: String,
-        expiresIn: String,
-        tokenType: String
-    ) {
+    // Comment: Native Google sign-in. The ID token is exchanged with Supabase using the raw nonce;
+    // the local member/settings setup is shared with the old deep-link completion path.
+    fun signInWithGoogle(idToken: String, rawNonce: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             _googleLoginLoading.value = true
             _googleLoginError.value = null
-
-            val result = com.example.data.SupabaseClient.fetchUserAndSaveSession(
-                accessToken,
-                refreshToken,
-                expiresIn,
-                tokenType
-            )
-
-            if (!result.success) {
-                _googleLoginLoading.value = false
-                _googleLoginError.value = result.message
-                return@launch
-            }
-
-            val email = result.userEmail
-            if (email.isNullOrBlank()) {
-                _googleLoginLoading.value = false
-                _googleLoginError.value = "Google profile does not contain an email."
-                return@launch
-            }
-
-            // Comment: Store the successfully authenticated Google email address in local SharedPreferences for pre-filling
-            com.example.data.SupabaseClient.saveRegisteredEmail(email)
-
-            // Perform the local profile setup and login
-            val membersList = repository.getAllMembersDirect()
-            var foundMember = membersList.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
-
-            if (foundMember == null) {
-                // Determine the role dynamically based on whether any custom user has already signed up in Supabase
-                val assignedRole = determineRoleForNewUser()
-
-                // Let's check if the member already exists in the remote database first
-                var remoteMember: Member? = null
-                try {
-                    // Comment: Include removed members so a removed account cannot sign back in and be re-created
-                    val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers(includeRemoved = true)
-                    remoteMember = remoteMembers.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
-                } catch (e: Exception) {
-                    android.util.Log.w("SavingsViewModel", "Failed to fetch remote members from Supabase: ${e.localizedMessage}")
-                }
-
-                // Comment: Block sign-in for an account that was removed by an admin
-                if (remoteMember != null && remoteMember.status == Constants.REMOVED_STATUS) {
-                    _googleLoginLoading.value = false
-                    _googleLoginError.value = "Your account has been removed. Please contact Admin."
+            try {
+                val result = com.example.data.SupabaseClient.signInWithGoogleIdToken(idToken, rawNonce)
+                if (!result.success) {
+                    _googleLoginError.value = result.message
+                    onResult(false, result.message)
                     return@launch
                 }
 
-                if (remoteMember != null) {
-                    // Remote member exists! Let's insert them directly into our local database to preserve their real ID.
-                    repository.insertMemberLocally(remoteMember)
-                    foundMember = remoteMember
-                } else {
-                    // Dynamically create a local member profile for the authenticated Supabase user
-                    val localName = email.substringBefore("@").replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-                    val newMember = Member(
-                        name = localName,
-                        email = email.trim(),
-                        role = assignedRole,
-                        status = "Active",
-                        totalSavings = 0.0,
-                        membershipNo = ""
-                    )
-                    repository.insertMember(newMember)
-                    val updatedList = repository.getAllMembersDirect()
-                    foundMember = updatedList.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
+                val email = result.userEmail
+                if (email.isNullOrBlank()) {
+                    val message = "Google profile does not contain an email."
+                    _googleLoginError.value = message
+                    onResult(false, message)
+                    return@launch
                 }
-            }
 
-            if (foundMember != null) {
-                if (foundMember.status == "Suspended") {
-                    _googleLoginLoading.value = false
-                    _googleLoginError.value = "Your account is suspended. Please contact Admin."
-                } else {
-                    _currentUserId.value = foundMember.id
-                    // Restore the remote member avatar while rebuilding local settings after a data reset
-                    val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = foundMember.name, membershipNo = foundMember.membershipNo, mobileNo = foundMember.mobileNo, profileImageUrl = foundMember.avatarUrl ?: settings.profileImageUrl))
-
-                    // Comment: Sync data on successful authentication
-                    repository.syncWithSupabase()
-
-                    _googleLoginLoading.value = false
-                }
-            } else {
+                // Comment: Store the successfully authenticated Google email address for pre-filling
+                com.example.data.SupabaseClient.saveRegisteredEmail(email)
+                completeExternalSignIn(email, onResult)
+            } catch (e: Exception) {
+                val message = "Network error: ${e.localizedMessage ?: "Unknown error"}"
+                _googleLoginError.value = message
+                onResult(false, message)
+            } finally {
+                // Comment: The busy flag is released on success, cancellation, exception and timeout alike.
                 _googleLoginLoading.value = false
-                _googleLoginError.value = "Error establishing local profile."
             }
         }
+    }
+
+    // Comment: Finish an external sign-in by finding or creating the local member and adopting its profile.
+    private suspend fun completeExternalSignIn(email: String, onResult: (Boolean, String) -> Unit) {
+        val membersList = repository.getAllMembersDirect()
+        var foundMember = membersList.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
+
+        if (foundMember == null) {
+            val assignedRole = determineRoleForNewUser()
+
+            // Comment: Check the remote table first so a member who exists on another device keeps their real id
+            var remoteMember: Member? = null
+            try {
+                // Comment: Include removed members so a removed account cannot sign back in and be re-created
+                val remoteMembers = com.example.data.SupabaseClient.dbFetchMembers(includeRemoved = true)
+                remoteMember = remoteMembers.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
+            } catch (e: Exception) {
+                android.util.Log.w("SavingsViewModel", "Failed to fetch remote members from Supabase: ${e.localizedMessage}")
+            }
+
+            // Comment: Block sign-in for an account that was removed by an admin
+            if (remoteMember != null && remoteMember.status == Constants.REMOVED_STATUS) {
+                val message = "Your account has been removed. Please contact Admin."
+                _googleLoginError.value = message
+                onResult(false, message)
+                return
+            }
+
+            if (remoteMember != null) {
+                // Remote member exists; insert locally to preserve their real id
+                repository.insertMemberLocally(remoteMember)
+                foundMember = remoteMember
+            } else {
+                val localName = email.substringBefore("@").replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                val newMember = Member(
+                    name = localName,
+                    email = email.trim(),
+                    role = assignedRole,
+                    status = "Active",
+                    totalSavings = 0.0,
+                    membershipNo = ""
+                )
+                repository.insertMember(newMember)
+                val updatedList = repository.getAllMembersDirect()
+                foundMember = updatedList.find { it.email.trim().equals(email.trim(), ignoreCase = true) }
+            }
+        }
+
+        if (foundMember == null) {
+            val message = "Error establishing local profile."
+            _googleLoginError.value = message
+            onResult(false, message)
+            return
+        }
+
+        if (foundMember.status == "Suspended") {
+            val message = "Your account is suspended. Please contact Admin."
+            _googleLoginError.value = message
+            onResult(false, message)
+            return
+        }
+
+        _currentUserId.value = foundMember.id
+        // Comment: Restore the remote member avatar while rebuilding local settings after a data reset
+        val settings = repository.getSettingsDirect() ?: AppSettings()
+        repository.updateSettings(
+            settings.copy(
+                profileName = foundMember.name,
+                membershipNo = foundMember.membershipNo,
+                mobileNo = foundMember.mobileNo,
+                profileImageUrl = foundMember.avatarUrl ?: settings.profileImageUrl?.takeIf { it.startsWith("http") }
+            )
+        )
+
+        // Comment: A sync failure must not turn a successful sign-in into a failed one; local data is usable offline.
+        try {
+            repository.syncWithSupabase()
+        } catch (e: Exception) {
+            android.util.Log.w("SavingsViewModel", "Post-sign-in sync failed: ${e.localizedMessage}")
+        }
+
+        onResult(true, "Welcome back, ${foundMember.name}!")
     }
 
     // Comment: Log out the current user and clear the active session

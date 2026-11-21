@@ -43,10 +43,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import com.example.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.net.Uri
 import android.content.Intent
-import java.io.File
-import java.io.FileOutputStream
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import coil.compose.AsyncImage
@@ -57,24 +54,6 @@ import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.PasswordValidator
 import java.text.SimpleDateFormat
 import java.util.*
-
-// Helper function to save a selected URI to app internal storage
-fun saveUriToInternalStorage(context: android.content.Context, uri: Uri): String? {
-    return try {
-        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-        val file = File(context.filesDir, "profile_picture_${System.currentTimeMillis()}.png")
-        val outputStream = FileOutputStream(file)
-        inputStream.use { input ->
-            outputStream.use { output ->
-                input.copyTo(output)
-            }
-        }
-        file.absolutePath
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
-    }
-}
 
 enum class AppTab(val label: String, val icon: ImageVector) {
     Home("Home", Icons.Default.Home),

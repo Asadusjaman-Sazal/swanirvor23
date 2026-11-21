@@ -74,6 +74,13 @@ android {
         versionName = getParsedVersionName()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Comment: The Google Web client ID is public config, but it must never live in source.
+        // Read it from the environment first, then the git-ignored .env file (the project's
+        // existing getSecret convention); an empty value is surfaced as a visible sign-in error
+        // instead of silently falling back to a browser flow.
+        val googleWebClientId = getSecret("GOOGLE_WEB_CLIENT_ID")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
     }
 
     signingConfigs {
@@ -147,6 +154,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.google.identity.googleid)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.security.crypto)
     // implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.lifecycle.runtime.compose)

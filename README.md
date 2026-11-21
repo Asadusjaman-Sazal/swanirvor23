@@ -17,20 +17,20 @@
 * **Conflict Resolution**: Custom mapping resolves local-to-remote ID conflicts, cleanly propagates foreign keys, and pre-applies Approved deletion/edit requests to ensure local and remote databases never diverge.
 
 ### 🛡️ Enterprise-Grade Authentication & Security
-* **Multi-Method Login**: Supports traditional email/password registration along with native **Google Sign-In (OAuth)** deep linking.
-* **Google Account Chooser**: Appends custom encoded query parameters to the OAuth flow to force the standard Google Account Chooser screen on every login.
+* **Multi-Method Login**: Traditional email/password registration plus native **Google Sign-In** through the phone's own Google account sheet (Credential Manager) — no browser, address bar or deep-link round trip.
+* **Native Google Token Exchange**: A random raw nonce is hashed before Google receives it; the returned ID token is exchanged for a Supabase session and kept in encrypted storage.
 * **Secure Password Recovery Flow**:
   * Users can request recovery emails directly from the Sign In interface.
-  * When clicked, deep links redirect the user directly to the app.
+  * When clicked, the recovery deep link opens the app directly.
   * A **Choose New Password** popup dialog overlays the Sign In screen securely.
   * The user is **never logged in automatically** on link click. This prevents account hijacking.
-  * Successful authentication and dashboard entry occur **only after** a new password (minimum 6 characters) has been successfully verified, saved, and updated in both Supabase and Room.
+  * Successful authentication and dashboard entry occur **only after** a new password (minimum 8 characters) has been successfully verified, saved, and updated in both Supabase and Room.
 
 ### 👥 Role-Based Dashboards & Change Request Pipeline
 * **Dynamic Roles**: The first user to register receives the **Admin** role, and subsequent users are classified as **Members**.
 * **Admin Control Center**: Admins can approve or reject critical changes (Savings Edits, Member Removal, Role Updates, Account Suspensions) through a custom dashboard.
 * **Clean visual rhythm**: List items feature adaptive "PENDING" status chips styled with precise typography sizes to handle large member names gracefully.
-* **Instant Synced Profiles**: Built-in integration with Supabase Storage allows members to upload customized profile avatars with instant public URL propagation.
+* **Instant Synced Profiles**: Members replace a 512×512 JPEG profile picture (capped at 50 KB) from Settings > Profile Information. It is stored in the public `avatars` bucket so every member's dashboard can load every other member's picture.
 
 ### 📅 Locale-Independent Weekly Financial Cycles
 * Uses explicit, custom day offsets in `Calendar` mathematics to calculate a strict **Friday-to-Thursday weekly savings cycle**. This completely eliminates offset errors on devices set to non-US region locales (where the first day of the week is Monday or Saturday).
@@ -73,14 +73,15 @@ Create a `.env` file at the root of your project using the structure from `.env.
 ```ini
 SUPABASE_URL="https://your-supabase-project.supabase.co"
 SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5..."
+GOOGLE_WEB_CLIENT_ID="your-web-client-id.apps.googleusercontent.com"
 ```
 
 *Note: Android handles these variables securely via BuildConfig during compiling.*
 
-### 3. Deep Linking Registration
-The app utilizes custom deep link schemes to catch Supabase Auth redirects. Ensure your application's manifest includes the corresponding intent filters:
+### 3. Password Recovery Deep Linking
+The custom scheme is used only for password recovery emails; native Google sign-in does not leave the app. Ensure the manifest keeps the recovery intent filter:
 ```xml
-<intent-filter android:autoVerify="true">
+<intent-filter>
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
@@ -96,7 +97,7 @@ To configure your Supabase backend to match the app's structure:
 1. Initialize the `members`, `savings`, `settings`, and `change_requests` tables.
 2. Grant authenticating users `SELECT` and `INSERT` capabilities on tables.
 3. Configure Row-Level Security (RLS) to allow authenticated members to query other savings records for collective dashboard metrics.
-4. Establish an `avatars` bucket in Supabase Storage with public access.
+4. Establish a public `avatars` bucket. The app writes `{user_id}.jpg` with upsert, and the bucket policies in `supabaseSql.txt` restrict writes/deletes to the matching `auth.uid()` while allowing every signed-in member to read all avatars.
 
 ---
 

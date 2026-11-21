@@ -33,15 +33,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Intent Filter for Supabase Google OAuth Deep Linking callbacks -->
-            <intent-filter android:label="Swanirvor23 Login Callback">
+            <!-- Deep links are used only for password recovery; native Google sign-in never leaves the app. -->
+            <intent-filter android:label="Swanirvor23 Password Recovery">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="swanirvor23" android:host="login-callback" />
             </intent-filter>
 
-            <intent-filter android:label="Swanirvor23 Alternate Callback">
+            <intent-filter android:label="Swanirvor23 Alternate Recovery">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />

@@ -5,6 +5,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import com.example.util.Constants
 
 private val DarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
@@ -52,13 +56,25 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    fontStep: Int = 0,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val density = LocalDensity.current
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    // Comment: The OS accessibility font scale is deliberately ignored for this app: layouts were measured at
+    // one size, and Settings > View Settings is the only way to enlarge text. The step is additive and applied
+    // once in Typography, so a label and a heading each gain the same amount.
+    val effectiveStep = Constants.FONT_SIZE_STEP_DEFAULT + Constants.clampFontSizeStep(fontStep)
+
+    CompositionLocalProvider(
+        LocalDensity provides Density(density = density.density, fontScale = 1f),
+        LocalFontStep provides effectiveStep
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = appTypography(effectiveStep),
+            content = content
+        )
+    }
 }

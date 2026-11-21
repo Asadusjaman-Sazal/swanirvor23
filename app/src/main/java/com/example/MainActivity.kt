@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
             }
 
             // Reactive theme styling (Light / Dark mode toggle)
-            MyApplicationTheme(darkTheme = appSettings.isDarkMode) {
+            MyApplicationTheme(darkTheme = appSettings.isDarkMode, fontStep = appSettings.fontSizeStep) {
                 // Comment: Show Splash Screen first on application startup, then navigate to MainScreen
                 if (showSplashScreen) {
                     SplashScreen(onTimeout = { showSplashScreen = false })
@@ -137,8 +137,9 @@ class MainActivity : ComponentActivity() {
                             android.util.Log.i("MainActivity", "Password recovery callback detected. Initiating recovery flow.")
                             viewModel.handleRecoveryCallback(accessToken, refreshToken, expiresIn, tokenType)
                         } else {
-                            android.util.Log.i("MainActivity", "Standard login callback detected. Initiating standard OAuth flow.")
-                            viewModel.handleGoogleLoginCallback(accessToken, refreshToken, expiresIn, tokenType)
+                            // Comment: Google sign-in is native now (Credential Manager), so a non-recovery
+                            // deep link is no longer a login result and must not start an auth session.
+                            android.util.Log.w("MainActivity", "Ignoring non-recovery deep link; Google sign-in is native.")
                         }
                     } else {
                         android.util.Log.w("MainActivity", "Deep link is missing the access_token parameter.")

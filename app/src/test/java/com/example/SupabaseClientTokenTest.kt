@@ -22,9 +22,14 @@ class SupabaseClientTokenTest {
 
     @Before
     fun setUp() {
-        // Comment: Init the encrypted prefs store; in the Robolectric sandbox encryption setup
-        // may fail, in which case SupabaseClient falls back to plain prefs, which is fine for these tests.
+        // Comment: Robolectric has no Android Keystore, so the encrypted store cannot be created here.
+        // Inject a throwaway in-memory store to exercise the token logic; production still refuses to
+        // save anything when secure storage is unavailable (asserted below).
         SupabaseClient.init(context)
+        context.getSharedPreferences("token-test", Context.MODE_PRIVATE).edit().clear().commit()
+        SupabaseClient.useSessionStoreForTest(
+            context.getSharedPreferences("token-test", Context.MODE_PRIVATE)
+        )
     }
 
     private fun saveFixtureSession(expiresAt: Long? = null, refreshToken: String? = "test-refresh-token") {
@@ -70,5 +75,13 @@ class SupabaseClientTokenTest {
     fun `getRefreshToken returns null when there is no session`() {
         SupabaseClient.clearSession()
         assertNull(SupabaseClient.getRefreshToken())
+    }
+
+    @Test
+    fun `saveSession refuses when secure storage is unavailable`() {
+        SupabaseClient.useSessionStoreForTest(null)
+        assertFalse(SupabaseClient.saveSession("{\"access_token\":\"never-written\"}"))
+        assertNull(SupabaseClient.getSession())
+        assertFalse(SupabaseClient.isSecureStorageAvailable())
     }
 }

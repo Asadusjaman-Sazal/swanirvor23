@@ -53,6 +53,7 @@ import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.data.model.WeeklyGoalUpdateResult
+import com.example.ui.theme.LocalFontStep
 import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.escapeCsv
 import com.example.util.formatToDdMmYyyy
@@ -1592,7 +1593,7 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                                         label = {
                                             Text(
                                                 text = "PENDING",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = (8 + LocalFontStep.current).sp),
                                                 maxLines = 1,
                                                 softWrap = false
                                             )
@@ -2434,7 +2435,7 @@ private fun MemberRoleBadge(role: String) {
         Text(
             text = role.uppercase(Locale.ROOT),
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelLarge.copy(fontSize = 9.sp, lineHeight = 12.sp),
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = (9 + LocalFontStep.current).sp, lineHeight = (12 + LocalFontStep.current).sp),
             maxLines = 1,
             softWrap = false
         )

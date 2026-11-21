@@ -53,6 +53,7 @@ import coil.compose.AsyncImage
 import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
+import com.example.ui.theme.LocalFontStep
 import com.example.ui.viewmodel.SavingsViewModel
 import com.example.util.calculateNextThursday
 import com.example.util.formatToDdMmYyyy
@@ -249,7 +250,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 32.sp
+                            fontSize = (32 + LocalFontStep.current).sp
                         )
                     )
 
@@ -327,7 +328,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontWeight = FontWeight.Bold,
                             color = if (showAdvance) Color(0xFF2563EB) else Color(0xFFEF4444),
-                            fontSize = 32.sp
+                            fontSize = (32 + LocalFontStep.current).sp
                         )
                     )
 
@@ -391,7 +392,7 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                         style = MaterialTheme.typography.headlineLarge.copy(
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF16A34A),
-                            fontSize = 32.sp
+                            fontSize = (32 + LocalFontStep.current).sp
                         )
                     )
 

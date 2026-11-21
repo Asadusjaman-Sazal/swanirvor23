@@ -41,19 +41,16 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import com.example.R
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import android.net.Uri
 import android.content.Intent
 import java.io.File
 import java.io.FileOutputStream
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
-import coil.compose.AsyncImage
 import com.example.data.model.AppSettings
 import com.example.data.model.Member
 import com.example.data.model.Savings
 import com.example.ui.viewmodel.SavingsViewModel
+import com.example.util.Constants
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -67,6 +64,7 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
+    val profilePictureRevision by viewModel.profilePictureRevision.collectAsStateWithLifecycle()
     val currentMemberEmail by viewModel.currentMemberEmail.collectAsStateWithLifecycle()
     // Comment: Prefer the authenticated account email so this field cannot be changed through profile settings.
     val registeredEmail = currentMemberEmail ?: com.example.data.SupabaseClient.getSessionEmail().orEmpty()
@@ -97,21 +95,6 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
     var notificationTime by remember { mutableStateOf(appSettings.notificationTime) }
     var notificationText by remember { mutableStateOf(appSettings.notificationText) }
     var showNotificationDayDropdown by remember { mutableStateOf(false) }
-
-    // Launcher to select a profile picture from device media gallery
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val localPath = saveUriToInternalStorage(context, uri)
-            if (localPath != null) {
-                viewModel.updateProfileInfo(profileNameText, membershipNoText, localPath, mobileNo = mobileNoText)
-                Toast.makeText(context, "Profile picture updated successfully!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Failed to save profile picture.", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
 
     // Synchronize states on DB flow update
     LaunchedEffect(appSettings) {
@@ -194,6 +177,75 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isDarkMode) 2.dp else 0.dp)
                     ) {
                         Text("Dark", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // --- VIEW SETTINGS SECTION ---
+        // Comment: The only text-size control. The OS accessibility scale is deliberately ignored so a
+        // phone set to a huge font cannot clip these layouts; this additive step is the app's one seam.
+        AccordionCard(
+            title = "View Settings",
+            icon = Icons.Default.FormatSize,
+            isOpen = settingsOpenSection == "view",
+            onToggle = { toggleSettingsSection("view") },
+            containerColor = if (isDarkMode) Color(0xFF131B2E) else Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Text size",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "This app keeps its own text size. The phone's font setting does not change it; use these buttons to move every label and heading together.",
+                    style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                )
+
+                val currentStep = Constants.clampFontSizeStep(appSettings.fontSizeStep)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalIconButton(
+                        onClick = { viewModel.setFontSizeStep(currentStep - 1) },
+                        enabled = currentStep > Constants.FONT_SIZE_STEP_MIN,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("font_step_minus")
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease Text Size")
+                    }
+
+                    // Comment: Tapping the value is the reset-to-Default action; the label uses the
+                    // locale's own digits for a + or - step.
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { viewModel.setFontSizeStep(0) }
+                            .testTag("font_step_value"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = fontSizeStepLabel(currentStep),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+
+                    FilledTonalIconButton(
+                        onClick = { viewModel.setFontSizeStep(currentStep + 1) },
+                        enabled = currentStep < Constants.FONT_SIZE_STEP_MAX,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("font_step_plus")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Increase Text Size")
                     }
                 }
             }
@@ -337,71 +389,14 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Profile Picture Option (displayed before Profile Name)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Profile Picture",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        MemberAvatar(
-                            name = appSettings.profileName,
-                            avatarUrl = appSettings.profileImageUrl,
-                            size = 64.dp
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Row wrapping the image action buttons (Choose Image and Delete button)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        imagePickerLauncher.launch("image/*")
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.testTag("upload_profile_picture_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CloudUpload,
-                                        contentDescription = "Upload Picture",
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Choose Image", style = MaterialTheme.typography.labelLarge)
-                                }
-
-                                // Delete button shown only when a profile picture is set
-                                if (appSettings.profileImageUrl != null) {
-                                    // Comment: Clear/Delete button to clear the currently uploaded profile picture, positioned to the right of Choose Image
-                                    OutlinedButton(
-                                        onClick = {
-                                            viewModel.updateProfileInfo(profileNameText, membershipNoText, null, mobileNo = mobileNoText)
-                                            Toast.makeText(context, "Profile picture cleared!", Toast.LENGTH_SHORT).show()
-                                        },
-                                        colors = ButtonDefaults.outlinedButtonColors(
-                                            contentColor = MaterialTheme.colorScheme.error
-                                        ),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.testTag("delete_profile_picture_button")
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete Picture",
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Clear", style = MaterialTheme.typography.labelLarge)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                // Comment: The 220 dp picture is the button; the viewer, source sheet and crop page
+                // own all edit/delete actions, so no overlay controls sit on the image.
+                ProfilePictureSection(
+                    viewModel = viewModel,
+                    name = appSettings.profileName,
+                    profileImageUrl = appSettings.profileImageUrl,
+                    revision = profilePictureRevision
+                )
 
                 // Profile Name uses the full available width; all profile fields save together below.
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -565,4 +560,11 @@ fun SettingsScreen(viewModel: SavingsViewModel, initialOpenSection: String? = nu
             }
         }
     }
+}
+
+// Comment: "Default" at zero, otherwise a signed number in the device locale's digits.
+private fun fontSizeStepLabel(step: Int): String {
+    if (step == 0) return "Default"
+    val number = java.text.NumberFormat.getIntegerInstance().format(kotlin.math.abs(step))
+    return if (step > 0) "+$number" else "-$number"
 }

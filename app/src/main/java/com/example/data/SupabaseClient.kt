@@ -37,6 +37,7 @@ object SupabaseClient {
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private var sharedPreferences: android.content.SharedPreferences? = null
+    private var secureStorageAvailable = false
 
     // Comment: Initialize an encrypted shared preferences session store so access/refresh tokens are protected at rest.
     // The encrypted store uses a new file name and the legacy plaintext prefs file is deleted so old tokens do not linger on disk.
@@ -53,18 +54,53 @@ object SupabaseClient {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
+            secureStorageAvailable = true
             // Comment: Remove the legacy plaintext prefs file (if present) so previously stored plaintext tokens are not left on disk
             appContext.deleteSharedPreferences("SupabaseAuthPrefs")
         } catch (e: Exception) {
-            // Comment: Fall back to plain preferences only if keystore/encryption setup fails, so the app can still start
-            Log.e("SupabaseAuth", "Failed to initialize encrypted preferences, falling back to plain preferences", e)
-            sharedPreferences = appContext.getSharedPreferences("SupabaseAuthPrefs", android.content.Context.MODE_PRIVATE)
+            // Comment: Never fall back to plaintext token storage. If the keystore is unavailable the app can still
+            // start, but a sign-in that needs to persist a session must fail visibly instead of writing tokens openly.
+            Log.e("SupabaseAuth", "Failed to initialize encrypted preferences; token persistence is disabled", e)
+            sharedPreferences = null
+            secureStorageAvailable = false
         }
     }
 
-    // Comment: Save the active Supabase session JSON string
-    fun saveSession(sessionJson: String) {
-        sharedPreferences?.edit()?.putString("session_json", sessionJson)?.apply()
+    // Comment: Report whether tokens can be persisted at all, so native sign-in can fail visibly rather than
+    // appearing successful while the session would be lost on the next launch.
+    fun isSecureStorageAvailable(): Boolean = secureStorageAvailable
+
+    // Comment: Test-only seam. Robolectric has no Android Keystore, so unit tests inject a throwaway
+    // in-memory store to exercise token parsing; production always uses the encrypted store and never
+    // falls back to plaintext.
+    internal fun useSessionStoreForTest(prefs: android.content.SharedPreferences?) {
+        sharedPreferences = prefs
+        secureStorageAvailable = prefs != null
+    }
+
+    // Comment: Save the active Supabase session JSON string; returns false when the encrypted store is unavailable
+    fun saveSession(sessionJson: String): Boolean {
+        val prefs = sharedPreferences ?: return false
+        prefs.edit().putString("session_json", sessionJson).apply()
+        return true
+    }
+
+    // Comment: A four-second reachability probe for the sign-in button only. The OS connectivity API reports the
+    // link, not the internet, so a Wi-Fi network with no uplink only shows up as a failed request here. Any HTTP
+    // answer (even 401/404) proves the project is reachable.
+    suspend fun isNetworkReachable(): Boolean = withContext(Dispatchers.IO) {
+        val probeClient = client.newBuilder()
+            .connectTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        try {
+            probeClient.newCall(
+                Request.Builder().url(SUPABASE_URL).get().build()
+            ).execute().use { true }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     // Comment: Clear the stored session JSON string on logout
@@ -148,7 +184,9 @@ object SupabaseClient {
                         val expiresIn = jsonResponse.optLong("expires_in", 3600L)
                         jsonResponse.put("expires_at", System.currentTimeMillis() + expiresIn * 1000)
                     }
-                    saveSession(jsonResponse.toString())
+                    if (!saveSession(jsonResponse.toString())) {
+                        return@use SupabaseAuthResult(false, "Secure storage is unavailable. Please log in again.", sessionExists = false)
+                    }
                     SupabaseAuthResult(true, "Token refreshed successfully", sessionExists = true)
                 } else {
                     clearSession()
@@ -217,11 +255,12 @@ object SupabaseClient {
                     val userEmail = userObj?.optString("email") ?: email
 
                     val sessionObj = jsonResponse.optJSONObject("session")
-                    val hasSession = sessionObj != null && !jsonResponse.isNull("session")
 
-                    if (hasSession && sessionObj != null) {
+                    if (sessionObj != null) {
                         val sessionJsonStr = sessionObj.toString()
-                        saveSession(sessionJsonStr)
+                        if (!saveSession(sessionJsonStr)) {
+                            return@use SupabaseAuthResult(false, "Secure storage is unavailable. Please try again.", userEmail, sessionExists = false)
+                        }
                         SupabaseAuthResult(true, "Sign up successful!", userEmail, sessionExists = true, sessionJson = sessionJsonStr)
                     } else {
                         // signUp result is success but no session yet (email confirmation needed)
@@ -266,7 +305,9 @@ object SupabaseClient {
                     val hasAccessToken = jsonResponse.has("access_token") && !jsonResponse.isNull("access_token")
 
                     if (hasAccessToken) {
-                        saveSession(jsonResponse.toString())
+                        if (!saveSession(jsonResponse.toString())) {
+                            return@use SupabaseAuthResult(false, "Secure storage is unavailable. Please try again.", userEmail, sessionExists = false)
+                        }
                         SupabaseAuthResult(true, "Sign in successful!", userEmail, sessionExists = true, sessionJson = jsonResponse.toString())
                     } else {
                         SupabaseAuthResult(false, "Authentication succeeded but no active session token was returned.", userEmail, sessionExists = false)
@@ -278,6 +319,60 @@ object SupabaseClient {
             }
         } catch (e: Exception) {
             Log.e("SupabaseAuth", "SignIn Error", e)
+            SupabaseAuthResult(false, "Network error: ${e.localizedMessage ?: "Unknown error"}", sessionExists = false)
+        }
+    }
+
+    /**
+     * Comment: Exchange a native Google ID token for a Supabase session. This is the REST equivalent of
+     * supabase.auth.signInWith(IDToken) because this project does not use supabase-kt. The raw nonce is sent
+     * here; Google only ever received its SHA-256 hash.
+     */
+    suspend fun signInWithGoogleIdToken(idToken: String, rawNonce: String): SupabaseAuthResult = withContext(Dispatchers.IO) {
+        val url = "$SUPABASE_URL/auth/v1/token?grant_type=id_token"
+        val jsonBody = JSONObject().apply {
+            put("provider", "google")
+            put("id_token", idToken)
+            put("nonce", rawNonce)
+        }.toString()
+
+        val request = Request.Builder()
+            .url(url)
+            .post(jsonBody.toRequestBody(jsonMediaType))
+            .addHeader("apikey", SUPABASE_PUBLIC_KEY)
+            .addHeader("Content-Type", "application/json")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                Log.d("SupabaseAuth", "Google ID-token sign-in response code: ${response.code}")
+                if (response.isSuccessful) {
+                    val jsonResponse = JSONObject(bodyStr)
+                    val userObj = jsonResponse.optJSONObject("user")
+                    val userEmail = userObj?.optString("email")
+                    val hasAccessToken = jsonResponse.has("access_token") && !jsonResponse.isNull("access_token")
+
+                    if (!hasAccessToken) {
+                        return@use SupabaseAuthResult(false, "Authentication succeeded but no active session token was returned.", userEmail, sessionExists = false)
+                    }
+
+                    // Comment: Persist an absolute expiry so the existing refresh path works for native Google sessions too
+                    if (!jsonResponse.has("expires_at")) {
+                        val expiresIn = jsonResponse.optLong("expires_in", 3600L)
+                        jsonResponse.put("expires_at", System.currentTimeMillis() + expiresIn * 1000)
+                    }
+                    if (!saveSession(jsonResponse.toString())) {
+                        return@use SupabaseAuthResult(false, "Secure storage is unavailable. Please try again.", userEmail, sessionExists = false)
+                    }
+                    SupabaseAuthResult(true, "Sign in successful!", userEmail, sessionExists = true, sessionJson = jsonResponse.toString())
+                } else {
+                    val errorMsg = parseErrorMessage(bodyStr, "Google sign-in failed. Please try again.")
+                    SupabaseAuthResult(false, errorMsg, sessionExists = false)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseAuth", "Google ID-token sign-in error", e)
             SupabaseAuthResult(false, "Network error: ${e.localizedMessage ?: "Unknown error"}", sessionExists = false)
         }
     }
@@ -318,7 +413,9 @@ object SupabaseClient {
                         put("user", userObj)
                     }
                     val sessionJsonStr = sessionJson.toString()
-                    saveSession(sessionJsonStr)
+                    if (!saveSession(sessionJsonStr)) {
+                        return@use SupabaseAuthResult(false, "Secure storage is unavailable. Please try again.", userEmail, sessionExists = false)
+                    }
                     SupabaseAuthResult(true, "Sign in successful!", userEmail, sessionExists = true, sessionJson = sessionJsonStr)
                 } else {
                     SupabaseAuthResult(false, "Failed to retrieve Google user profile.", sessionExists = false)
@@ -579,6 +676,7 @@ object SupabaseClient {
             put("notification_text", settings.notificationText)
             put("enable_notifications", settings.enableNotifications)
             put("profile_image_url", settings.profileImageUrl ?: JSONObject.NULL)
+            put("font_size_step", settings.fontSizeStep)
         }
     }
 
@@ -595,7 +693,10 @@ object SupabaseClient {
             notificationTime = json.optString("notification_time", "09:00"),
             notificationText = json.optString("notification_text", ""),
             enableNotifications = json.optBoolean("enable_notifications", true),
-            profileImageUrl = json.optString("profile_image_url", "").takeIf { it.isNotEmpty() && it != "null" }
+            profileImageUrl = json.optString("profile_image_url", "").takeIf { it.isNotEmpty() && it != "null" },
+            // Comment: Clamp on read too, so an older build, restored backup, or hand-edited remote value
+            // can never push text past the range the layouts were measured for.
+            fontSizeStep = json.optInt("font_size_step", 0).coerceIn(Constants.FONT_SIZE_STEP_MIN, Constants.FONT_SIZE_STEP_MAX)
         )
     }
 
@@ -663,35 +764,63 @@ object SupabaseClient {
         }
     }
 
-    // Comment: Upload avatar image bytes to Supabase Storage bucket and return the public URL if successful
-    suspend fun uploadAvatar(fileName: String, fileBytes: ByteArray): String? = withContext(Dispatchers.IO) {
-        val token = getAccessToken() ?: SUPABASE_PUBLIC_KEY
+    // Comment: Upload the compressed profile JPEG to the existing public avatars bucket at {user_id}.jpg.
+    // x-upsert lets a replacement overwrite the same object, so the shared Members Dashboard always sees
+    // the latest picture at a stable URL. The cache-busting query keeps Coil from showing the old image.
+    suspend fun uploadProfilePicture(userId: String, fileBytes: ByteArray): String? = withContext(Dispatchers.IO) {
+        if (isSessionExpiringSoon()) refreshAccessToken()
+        val token = getAccessToken() ?: return@withContext null
+        val fileName = "$userId.jpg"
         val url = "$SUPABASE_URL/storage/v1/object/avatars/$fileName"
-
-        val mediaType = "image/png".toMediaType()
-        val requestBody = fileBytes.toRequestBody(mediaType)
 
         val request = Request.Builder()
             .url(url)
-            .post(requestBody)
+            .post(fileBytes.toRequestBody("image/jpeg".toMediaType()))
+            .addHeader("apikey", SUPABASE_PUBLIC_KEY)
+            .addHeader("Authorization", "Bearer $token")
+            .addHeader("x-upsert", "true")
+            .addHeader("Cache-Control", "3600")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                val responseStr = response.body?.string()
+                Log.d("SupabaseStorage", "Upload profile picture response code: ${response.code}")
+                if (response.isSuccessful) {
+                    "$SUPABASE_URL/storage/v1/object/public/avatars/$fileName?v=${System.currentTimeMillis()}"
+                } else {
+                    Log.e("SupabaseStorage", "Profile picture upload failed with response code ${response.code}: $responseStr")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SupabaseStorage", "Error uploading profile picture to Supabase", e)
+            null
+        }
+    }
+
+    // Comment: Remove the stored profile object during delete. A 404 means the object was already gone,
+    // which is still a successful delete for the caller.
+    suspend fun deleteProfilePicture(userId: String): Boolean = withContext(Dispatchers.IO) {
+        if (isSessionExpiringSoon()) refreshAccessToken()
+        val token = getAccessToken() ?: return@withContext false
+        val url = "$SUPABASE_URL/storage/v1/object/avatars/$userId.jpg"
+
+        val request = Request.Builder()
+            .url(url)
+            .delete()
             .addHeader("apikey", SUPABASE_PUBLIC_KEY)
             .addHeader("Authorization", "Bearer $token")
             .build()
 
         try {
             client.newCall(request).execute().use { response ->
-                val responseStr = response.body?.string()
-                Log.d("SupabaseStorage", "Upload avatar response code: ${response.code}")
-                if (response.isSuccessful) {
-                    "$SUPABASE_URL/storage/v1/object/public/avatars/$fileName"
-                } else {
-                    Log.e("SupabaseStorage", "Upload failed with response code ${response.code}: $responseStr")
-                    null
-                }
+                Log.d("SupabaseStorage", "Delete profile picture response code: ${response.code}")
+                response.isSuccessful || response.code == 404
             }
         } catch (e: Exception) {
-            Log.e("SupabaseStorage", "Error uploading avatar to Supabase", e)
-            null
+            Log.e("SupabaseStorage", "Error deleting profile picture from Supabase", e)
+            false
         }
     }
 

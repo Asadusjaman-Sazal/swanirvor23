@@ -59,7 +59,10 @@ data class AppSettings(
     val notificationTime: String = "09:00",
     val notificationText: String = "Reminder: Your weekly contribution of ৳500 is due tomorrow.",
     val enableNotifications: Boolean = true,
-    val profileImageUrl: String? = null
+    val profileImageUrl: String? = null,
+    // Comment: The user's own text-size step (-2..+6). Stored in the existing settings row and
+    // synced with app_settings.font_size_step so a login cannot overwrite it with the default.
+    @ColumnInfo(defaultValue = "0") val fontSizeStep: Int = 0
 )
 
 /**

@@ -52,8 +52,12 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     enable_notifications BOOLEAN DEFAULT true,
     profile_image_url TEXT,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE DEFAULT auth.uid() UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    font_size_step INTEGER NOT NULL DEFAULT 0
 );
+
+-- Comment: Additive upgrade for existing projects that predate the View Settings step.
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS font_size_step INTEGER NOT NULL DEFAULT 0;
 
 -- =========================================================================
 -- 4. Create the change_requests table
@@ -195,6 +199,28 @@ USING (
   bucket_id = 'avatars' 
   AND name LIKE 'avatar_' || regexp_replace(auth.jwt() ->> 'email', '[^a-zA-Z0-9]', '_', 'g') || '%'
 );
+
+-- 5. Policies for the native profile-picture flow (Version: 1.0.55)
+-- The bucket stays public so every member can see every profile picture; the object name is the
+-- Supabase user UUID, so these policies let each authenticated user write only their own {user_id}.jpg.
+DROP POLICY IF EXISTS "Allow users to insert their own user-id avatar" ON storage.objects;
+CREATE POLICY "Allow users to insert their own user-id avatar"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'avatars' AND name = (auth.uid()::text || '.jpg'));
+
+DROP POLICY IF EXISTS "Allow users to update their own user-id avatar" ON storage.objects;
+CREATE POLICY "Allow users to update their own user-id avatar"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'avatars' AND name = (auth.uid()::text || '.jpg'))
+WITH CHECK (bucket_id = 'avatars' AND name = (auth.uid()::text || '.jpg'));
+
+DROP POLICY IF EXISTS "Allow users to delete their own user-id avatar" ON storage.objects;
+CREATE POLICY "Allow users to delete their own user-id avatar"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'avatars' AND name = (auth.uid()::text || '.jpg'));
 
 -- ===============================================================================
 -- For soft delete mechanism to work (Version: 0.0.48)

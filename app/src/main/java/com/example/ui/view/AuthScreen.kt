@@ -1,5 +1,8 @@
 package com.example.ui.view
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
@@ -38,6 +41,7 @@ import android.util.DisplayMetrics
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
+import kotlinx.coroutines.launch
 
 /**
  * Beautiful, cohesive Sign In and Sign Up page for the Swanirvor-23 App.
@@ -49,6 +53,9 @@ fun AuthScreen(viewModel: SavingsViewModel) {
     var isSignInMode by remember { mutableStateOf(true) }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    // Comment: Credential Manager needs an Activity, not the application context, so the sheet can open over this screen.
+    val googleSignInScope = rememberCoroutineScope()
+    var isGoogleSheetBusy by remember { mutableStateOf(false) }
 
     // Form Field States
     var nameInput by remember { mutableStateOf("") }
@@ -579,17 +586,58 @@ fun AuthScreen(viewModel: SavingsViewModel) {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Comment: High-fidelity "Sign In/Sign Up with Google" button using Supabase OAuth
+                    // Comment: Native Google sign-in: the phone's account sheet opens over this screen. No browser,
+                    // no redirect URL, and no deep-link return. The ID token is exchanged with Supabase afterwards.
                     OutlinedButton(
                         onClick = {
-                            if (!googleLoginLoading && !isLoading) {
-                                // Comment: Force Google Account Chooser screen (prompt select_account) so user can choose or add another Gmail account
-                                // We use percent-encoded brackets (%5B and %5D) so Android Uri.parse and Chrome do not strip or corrupt the queryParams[prompt] parameter
-                                val url = "${com.example.BuildConfig.SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=swanirvor23://login-callback&queryParams%5Bprompt%5D=select_account&query_params%5Bprompt%5D=select_account"
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            if (!googleLoginLoading && !isLoading && !isGoogleSheetBusy) {
+                                authErrorMessage = null
+                                signUpSuccessMessage = null
+                                val webClientId = com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
+                                val activity = context.findActivity()
+                                if (webClientId.isBlank() || activity == null) {
+                                    // Comment: A missing Web client ID is a configuration failure, never a reason to
+                                    // fall back to the old browser flow. Show it instead of failing silently.
+                                    authErrorMessage = "Google Sign-In Could Not Complete. Please Try Again."
+                                } else {
+                                    googleSignInScope.launch {
+                                        isGoogleSheetBusy = true
+                                        var handedOff = false
+                                        try {
+                                            // Comment: A Wi-Fi link with no uplink looks like a wrong certificate to
+                                            // Credential Manager, so test the project URL before opening the sheet.
+                                            if (!com.example.data.SupabaseClient.isNetworkReachable()) {
+                                                authErrorMessage = "No Connection. Check Your Internet And Try Again."
+                                                return@launch
+                                            }
+                                            when (val outcome = com.example.util.GoogleSignIn.requestIdToken(activity, webClientId)) {
+                                                is com.example.util.GoogleSignInOutcome.Success -> {
+                                                    // Comment: Keep the sheet spinner until the Supabase exchange and local
+                                                    // profile setup finish; the callback always fires from the ViewModel.
+                                                    handedOff = true
+                                                    viewModel.signInWithGoogle(outcome.result.idToken, outcome.result.rawNonce) { success, message ->
+                                                        isGoogleSheetBusy = false
+                                                        if (!success) {
+                                                            authErrorMessage = message
+                                                        }
+                                                    }
+                                                }
+                                                com.example.util.GoogleSignInOutcome.Cancelled -> {
+                                                    // Comment: The user closed the account sheet; show nothing.
+                                                }
+                                                com.example.util.GoogleSignInOutcome.ConfigurationError -> {
+                                                    authErrorMessage = "Google Sign-In Could Not Complete. Please Try Again."
+                                                }
+                                            }
+                                        } finally {
+                                            // Comment: Every path that did not hand off to the exchange must release
+                                            // the button; the exchange path releases it in its callback.
+                                            if (!handedOff) {
+                                                isGoogleSheetBusy = false
+                                            }
+                                        }
+                                    }
                                 }
-                                context.startActivity(intent)
                             }
                         },
                         modifier = Modifier
@@ -601,13 +649,13 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = Color.White
                         ),
-                        enabled = !googleLoginLoading && !isLoading
+                        enabled = !googleLoginLoading && !isLoading && !isGoogleSheetBusy
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            if (googleLoginLoading) {
+                            if (googleLoginLoading || isGoogleSheetBusy) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     color = goldAccent,
@@ -640,6 +688,16 @@ fun AuthScreen(viewModel: SavingsViewModel) {
             }
         }
     }
+}
+
+// Comment: Credential Manager needs the hosting Activity, but LocalContext can be a ContextWrapper.
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
 }
 
 /**
