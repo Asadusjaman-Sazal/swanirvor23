@@ -1,4 +1,4 @@
-Current Version: 1.0.59
+Current Version: 1.0.61
 -----------------------
 
 Version History:
@@ -129,3 +129,5 @@ Version: 1.0.56 - Fixed profile-picture saves claiming success before the public
 Version: 1.0.57 - Fixed Profile Picture > Edit > Gallery opening the File Manager. The Gallery row now launches the device's gallery/photos picker with ACTION_PICK on the MediaStore image collection; the Android photo picker is used only when no gallery app is available, while Files continues to use the document picker.
 Version: 1.0.58 - Startup auth now has an explicit Restoring state instead of treating every not-yet-restored session as logged out. A saved session opens the app from its matching local member immediately and runs the full Supabase sync in the background; the login screen appears only when no session is stored or the refresh token is rejected. A rejected session shows a clear expired-session message, while network failures keep the local-first app usable. If the local member is missing, the restoring screen offers Retry (and an explicit Sign in again) instead of a false logout.
 Version: 1.0.59 - Centered the Google sign-in loading indicator inside the Sign In/Sign Up with Google button. Pinned Credential Manager and Google ID to the known-working 1.3.0/1.1.1 pair: the previous 1.6.0/1.2.0 combination showed the Google account chooser but could hang after an account was selected, so no session was ever returned.
+Version: 1.0.60 - Personal Dashboard: the ALERT! card now mirrors Admin Panel > This Week's Payment for the last completed Friday→Thursday cycle, showing only when the signed-in member has no contribution in that cycle and the member profile is resolved. Added a top-right close button; the dismissal is stored per member and per cycle so it stays cleared for that week but a new missed week still raises a new Alert.
+Version: 1.0.61 - Added the automatic post-edit commit workflow to AGENTS.md: every successful build is committed with a one-line summary that starts with the app version and the matching versionHistory log as the commit description.

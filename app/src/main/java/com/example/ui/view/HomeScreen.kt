@@ -44,6 +44,7 @@ import com.example.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
+import android.content.Context
 import android.content.Intent
 import java.io.File
 import java.io.FileOutputStream
@@ -65,6 +66,11 @@ import com.example.util.parseDateTextToMillis
 import com.example.util.SavingsOrdering
 import java.text.SimpleDateFormat
 import java.util.*
+
+// Comment: Dismissals are stored locally per member and per previous-cycle start, so closing one
+// week's Alert never suppresses a later week's missed-payment Alert.
+private const val ALERT_PREFS_NAME = "home_alert_prefs"
+private const val ALERT_DISMISSED_CYCLE_KEY_PREFIX = "dismissed_alert_cycle_"
 
 /**
  * Personal Dashboard Composable (Home tab)
@@ -95,11 +101,35 @@ fun HomeScreen(viewModel: SavingsViewModel) {
     // Calculate total savings for the current month
     val currentMonthSavings = savingsList.filter { isCurrentMonth(it.dateText) }.sumOf { it.amount }
 
-    // Check the selected contribution date in the last cycle (previous week Friday to Thursday)
+    // Check the selected contribution date in the last cycle (previous week Friday to Thursday).
+    // Comment: Admin Panel > "This Week's Payment" marks a member paid when the cycle contains any
+    // contribution. Apply that same paid/unpaid rule to the previous Friday→Thursday window, never
+    // to the still-open current cycle.
     val (lastCycleStart, lastCycleEnd) = getPreviousCycleRange()
     val userPaidLastCycle = savingsList.any { s ->
         parseDateTextToMillis(s.dateText) in lastCycleStart..lastCycleEnd
     }
+
+    // Comment: A dismissal belongs to one member and one previous-cycle window. The member key keeps
+    // two accounts on the same phone from clearing each other's Alert, and the cycle start lets the
+    // next missed week raise a fresh Alert.
+    val alertPreferences = remember {
+        context.getSharedPreferences(ALERT_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val alertOwnerKey = currentMemberEmail?.trim()?.lowercase()
+        ?: currentMember?.email?.trim()?.lowercase()
+        ?: "unknown"
+    var dismissedAlertCycleStart by remember(alertOwnerKey) {
+        mutableStateOf(
+            alertPreferences.getLong(
+                "$ALERT_DISMISSED_CYCLE_KEY_PREFIX$alertOwnerKey",
+                Long.MIN_VALUE
+            )
+        )
+    }
+    val showMissedPaymentAlert = currentMember != null &&
+        !userPaidLastCycle &&
+        dismissedAlertCycleStart != lastCycleStart
 
     // Active Cycle range (this cycle's Friday 00:00 to Thursday 23:59)
     val (activeCycleStartsMillis, activeCycleEndsMillis) = remember {
@@ -161,8 +191,9 @@ fun HomeScreen(viewModel: SavingsViewModel) {
             }
         }
 
-        // ALERT! Card for missed payment (raised only when the user has no entry in the Savings History whose date falls in the previous cycle, so an ongoing current cycle never triggers it)
-        if (!userPaidLastCycle) {
+        // ALERT! Card for the last completed payment cycle. It is dismissible for this member and
+        // this cycle; the next missed cycle raises a new card.
+        if (showMissedPaymentAlert) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -173,31 +204,58 @@ fun HomeScreen(viewModel: SavingsViewModel) {
                 shape = RoundedCornerShape(12.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = "Warning alert",
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                    Column {
-                        Text(
-                            text = "ALERT!",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                fontWeight = FontWeight.Bold
-                            )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, top = 16.dp, end = 56.dp, bottom = 16.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Warning alert",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(top = 2.dp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "You have missed a weekly payment. Please deposit ${weeklyGoal.toInt()}৳.",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                        Column {
+                            Text(
+                                text = "ALERT!",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "You have missed a weekly payment. Please deposit ${weeklyGoal.toInt()}৳.",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                                )
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            alertPreferences.edit()
+                                .putLong(
+                                    "$ALERT_DISMISSED_CYCLE_KEY_PREFIX$alertOwnerKey",
+                                    lastCycleStart
+                                )
+                                .apply()
+                            dismissedAlertCycleStart = lastCycleStart
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(48.dp)
+                            .testTag("alert_dismiss_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss alert",
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

@@ -54,7 +54,11 @@ Guidelines for AI coding agents (and human contributors) working in this reposit
 - **Minimal, focused diffs.** Make the fewest changes that satisfy the request. Don't stage unrelated files (`git add -A`).
 - **Verify non-trivial changes.** Run the typecheck and relevant tests before finishing. Report what you ran and its result.
 - **Don't run destructive or irreversible commands** (force-push, resets, deploys, deleting production data) unless explicitly asked.
-- **Don't commit or open a PR** unless the user asks you to.
+- **Commit every successful edit.** Once the change compiles/tests and its `versionHistory.txt` entry is in place, create a commit. Match the existing repository style:
+  - The commit summary is one line and starts with the app version, followed by a short description — for example `Version: 1.0.60 - Added ...` or `Version: 1.0.58 - 1.0.59 ...` when several versions are covered.
+  - The commit description is the corresponding version-history log, one version per line, copied from `versionHistory.txt`.
+  - Stage and commit only the files that belong to the current edit, unless the user explicitly asks to include other pending changes. Never fold in unrelated working-tree changes silently.
+  - Do not push or open a PR unless the user asks you to.
 
 ## Definition of Done
 
@@ -63,3 +67,4 @@ Guidelines for AI coding agents (and human contributors) working in this reposit
 - New code is in appropriately named files/packages (Rules 4, 5, 7).
 - The change compiles and relevant checks pass.
 - A version-history entry was added and the version bumped (Rule 11).
+- The verified edit was committed with a one-line versioned summary and the matching version log as its description, without unrelated working-tree changes.
