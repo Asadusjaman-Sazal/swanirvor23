@@ -8,11 +8,19 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,7 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.repository.ProfilePictureRepository
 import com.example.ui.viewmodel.SavingsViewModel
 
@@ -39,6 +49,15 @@ fun ProfilePictureSection(
 ) {
     val context = LocalContext.current
     val userId = com.example.data.SupabaseClient.getCurrentUserUuid()
+    val uploadError by viewModel.profilePictureUploadError.collectAsStateWithLifecycle()
+
+    // Comment: The main screen owns the failure toast so it is visible from any tab; this section
+    // keeps the persistent message and Retry action next to the local preview.
+    // Startup may have run before this session existed. Opening the profile is another chance to
+    // flush a persisted pending upload; it is a no-op when nothing is pending.
+    LaunchedEffect(userId) {
+        viewModel.retryPendingProfilePictureUpload()
+    }
 
     // Comment: The local file is the source of truth for the signed-in user; the public URL is the
     // shared copy other members see. Recompute on every save/delete so a stable path still refreshes.
@@ -65,9 +84,9 @@ fun ProfilePictureSection(
         if (uri != null) cropUri = uri
     }
 
-    Box(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
@@ -83,6 +102,27 @@ fun ProfilePictureSection(
                 revision = revision,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        val error = uploadError
+        if (error != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = error,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    .testTag("profile_picture_upload_error")
+            )
+            TextButton(
+                onClick = { viewModel.retryProfilePictureUpload() },
+                modifier = Modifier.testTag("retry_profile_picture_upload")
+            ) {
+                Text("Retry upload")
+            }
         }
     }
 
@@ -142,6 +182,10 @@ fun ProfilePictureSection(
                     isProcessing = false
                     if (!success) {
                         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    } else if (message.isNotBlank()) {
+                        // Comment: This is a local-save confirmation, not a claim that other members
+                        // can already see the new picture; the upload failure has its own banner.
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                     }
                 }
             }

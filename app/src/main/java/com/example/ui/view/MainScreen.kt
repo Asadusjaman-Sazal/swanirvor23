@@ -266,6 +266,13 @@ fun MainAppContent(viewModel: SavingsViewModel) {
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // Comment: A failed public avatar upload must be visible even when the user is on another tab.
+    // The same message also stays under the picture in Profile Information.
+    val profileUploadError by viewModel.profilePictureUploadError.collectAsStateWithLifecycle()
+    LaunchedEffect(profileUploadError) {
+        profileUploadError?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+    }
+
     // Comment: Request POST_NOTIFICATIONS permission dynamically on Android 13+ (API 33+) to allow showing status bar reminders
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
         val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(

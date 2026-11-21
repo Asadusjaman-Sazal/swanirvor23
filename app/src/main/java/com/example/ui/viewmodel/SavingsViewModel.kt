@@ -51,6 +51,10 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     // file even though the path itself is stable. The upload never gates this state.
     private val _profilePictureRevision = MutableStateFlow(0)
     val profilePictureRevision: StateFlow<Int> = _profilePictureRevision.asStateFlow()
+    // Comment: A local save is not the same as a confirmed public upload. This state keeps the
+    // distinction visible in Profile Information without hiding the device-local preview.
+    private val _profilePictureUploadError = MutableStateFlow<String?>(null)
+    val profilePictureUploadError: StateFlow<String?> = _profilePictureUploadError.asStateFlow()
     // Comment: Serialize picture writes so a slow background upload can never finish after a delete
     // and resurrect the old object. The UI reports the local save before the upload starts, so this
     // lock never makes the screen wait for the network.
@@ -149,6 +153,10 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     repository.updateSettings(settings.copy(profileName = matchedMember.name, membershipNo = matchedMember.membershipNo, mobileNo = matchedMember.mobileNo))
                 }
             }
+
+            // Comment: A failed or interrupted avatar upload leaves a pending marker; retry it on
+            // this launch without making the already-cached local preview wait for the network.
+            retryPendingProfilePictureUpload()
         }
 
         // Comment: Dynamically track and expose the logged-in user's email for accurate de-duplication matching
@@ -469,8 +477,13 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                             return@withLock
                         }
 
+                        // Comment: Record the pending public copy before exposing the local preview,
+                        // so an upload failure or process death has a durable retry path. The local
+                        // preview itself is shown immediately and never waits for the upload.
+                        ProfilePictureRepository.markUploadPending(app, userId)
+                        _profilePictureUploadError.value = null
                         _profilePictureRevision.value += 1
-                        onResult(true, "Profile picture updated.")
+                        onResult(true, "Picture saved on this phone. Uploading…")
 
                         // Comment: Keep the previous public URL (or null) until the upload succeeds. The
                         // device-local file above is already what the profile surface displays; a local
@@ -482,14 +495,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                             repository.updateSettings(settings.copy(profileImageUrl = currentUrl))
                         }
 
-                        val publicUrl = ProfilePictureRepository.upload(userId, result.bytes) ?: return@withLock
-                        val latest = repository.getSettingsDirect() ?: AppSettings()
-                        repository.updateSettings(latest.copy(profileImageUrl = publicUrl))
-                        val member = repository.getMemberById(currentUserMemberId)
-                        if (member != null) {
-                            repository.updateMember(member.copy(avatarUrl = publicUrl))
-                        }
-                        _profilePictureRevision.value += 1
+                        uploadAndRecord(app, userId, result.bytes)
                     }
                     ProfileImageResult.Unreadable -> onResult(false, ProfilePictureRepository.UNREADABLE_MESSAGE)
                 }
@@ -509,6 +515,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     return@withLock
                 }
 
+                // Comment: A deletion supersedes any pending public upload for this user.
+                ProfilePictureRepository.clearUploadPending(app, userId)
+                _profilePictureUploadError.value = null
                 ProfilePictureRepository.deleteLocal(ProfilePictureRepository.localFile(app, userId))
                 _profilePictureRevision.value += 1
 
@@ -546,16 +555,90 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
                 val bytes = ProfilePictureRepository.recompressWholeImage(app, userId) ?: return@withLock
                 if (!ProfilePictureRepository.writeLocal(file, bytes)) return@withLock
+                ProfilePictureRepository.markUploadPending(app, userId)
+                _profilePictureUploadError.value = null
                 _profilePictureRevision.value += 1
-
-                val publicUrl = ProfilePictureRepository.upload(userId, bytes) ?: return@withLock
-                val latest = repository.getSettingsDirect() ?: AppSettings()
-                repository.updateSettings(latest.copy(profileImageUrl = publicUrl))
-                val member = repository.getMemberById(currentUserMemberId)
-                if (member != null) {
-                    repository.updateMember(member.copy(avatarUrl = publicUrl))
-                }
+                uploadAndRecord(app, userId, bytes)
             }
+        }
+    }
+
+    // Comment: Retry a persisted avatar upload at launch, after sign-in, or when Profile
+    // Information opens. It is a no-op when no upload is pending.
+    fun retryPendingProfilePictureUpload() {
+        viewModelScope.launch {
+            profilePictureMutex.withLock {
+                val app = getApplication<Application>()
+                val userId = com.example.data.SupabaseClient.getCurrentUserUuid() ?: return@withLock
+                if (!ProfilePictureRepository.hasPendingUpload(app, userId)) return@withLock
+                retryPendingUploadLocked(app, userId)
+            }
+        }
+    }
+
+    // Comment: User-triggered retry from the visible failure message. It also works when the
+    // pending marker itself could not be written, because the local JPEG is still present.
+    fun retryProfilePictureUpload() {
+        viewModelScope.launch {
+            profilePictureMutex.withLock {
+                val app = getApplication<Application>()
+                val userId = com.example.data.SupabaseClient.getCurrentUserUuid() ?: return@withLock
+                ProfilePictureRepository.markUploadPending(app, userId)
+                retryPendingUploadLocked(app, userId)
+            }
+        }
+    }
+
+    private suspend fun retryPendingUploadLocked(app: Application, userId: String) {
+        val file = ProfilePictureRepository.existingLocalFile(app, userId)
+        if (file == null) {
+            // Comment: The user deleted the picture after the upload failed; there is nothing to send.
+            ProfilePictureRepository.clearUploadPending(app, userId)
+            _profilePictureUploadError.value = null
+            return
+        }
+
+        val bytes = ProfilePictureRepository.readLocal(file)
+        if (bytes == null) {
+            _profilePictureUploadError.value = ProfilePictureRepository.UPLOAD_FAILURE_MESSAGE
+            return
+        }
+        uploadAndRecord(app, userId, bytes)
+    }
+
+    // Comment: Upload the local JPEG and only then record the public URL. A null result leaves the
+    // pending marker in place and surfaces the failure; the local preview remains untouched.
+    private suspend fun uploadAndRecord(app: Application, userId: String, bytes: ByteArray): Boolean {
+        val publicUrl = ProfilePictureRepository.upload(userId, bytes)
+        if (publicUrl == null) {
+            _profilePictureUploadError.value = ProfilePictureRepository.UPLOAD_FAILURE_MESSAGE
+            return false
+        }
+
+        return try {
+            // Comment: Never apply an old account's completed upload to a newly signed-in account.
+            // The old marker stays in place for that user's next sign-in.
+            if (com.example.data.SupabaseClient.getCurrentUserUuid() != userId) return false
+
+            val latest = repository.getSettingsDirect() ?: AppSettings()
+            repository.updateSettings(latest.copy(profileImageUrl = publicUrl))
+            val member = repository.getMemberById(currentUserMemberId)
+                ?: com.example.data.SupabaseClient.getSessionEmail()?.let { email ->
+                    repository.getAllMembersDirect().find {
+                        it.email.trim().equals(email.trim(), ignoreCase = true)
+                    }
+                }
+            if (member != null) {
+                repository.updateMember(member.copy(avatarUrl = publicUrl))
+            }
+            ProfilePictureRepository.clearUploadPending(app, userId)
+            _profilePictureUploadError.value = null
+            _profilePictureRevision.value += 1
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("SavingsViewModel", "Profile picture uploaded but its link could not be saved", e)
+            _profilePictureUploadError.value = ProfilePictureRepository.UPLOAD_FAILURE_MESSAGE
+            false
         }
     }
 
@@ -906,6 +989,9 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: Exception) {
                     android.util.Log.e("SavingsViewModel", "Failed to run post-login sync after password update", e)
                 }
+
+                // Comment: Retry a persisted avatar upload after this recovery login completes.
+                retryPendingProfilePictureUpload()
             }
 
             onResult(true, "Your password has been successfully updated!")
@@ -1101,6 +1187,8 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
                     // Comment: Sync data on successful authentication
                     repository.syncWithSupabase()
 
+                    // Comment: The startup retry may have run before this session existed.
+                    retryPendingProfilePictureUpload()
                     onResult(true, "Welcome back, ${foundMember.name}!")
                 }
             } else {
@@ -1304,6 +1392,8 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
             android.util.Log.w("SavingsViewModel", "Post-sign-in sync failed: ${e.localizedMessage}")
         }
 
+        // Comment: A pending upload from an earlier session is retried once the user is signed in.
+        retryPendingProfilePictureUpload()
         onResult(true, "Welcome back, ${foundMember.name}!")
     }
 
@@ -1315,6 +1405,7 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         _googleLoginLoading.value = false
         _googleLoginError.value = null
         _showResetPasswordDialog.value = false
+        _profilePictureUploadError.value = null
     }
 
     companion object {

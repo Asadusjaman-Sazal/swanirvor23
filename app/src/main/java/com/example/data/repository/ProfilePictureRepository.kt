@@ -17,16 +17,54 @@ object ProfilePictureRepository {
     const val MAX_BYTES = 50 * 1024
     const val UNREADABLE_MESSAGE = "Picture could not be read."
 
+    // Comment: The local preview is visible immediately, but the public copy other members load is
+    // only confirmed after the upload. This message is shown in Profile Information and keeps the
+    // distinction clear instead of reporting the local save as a completed profile update.
+    const val UPLOAD_FAILURE_MESSAGE =
+        "Picture saved on this phone, but the upload failed. Other members still see the old picture. Tap Retry upload or try again next time."
+
+    private const val PENDING_SUFFIX = ".pending"
+
     // Comment: Key the local file by the Supabase user UUID, so a second account signing in on the
     // same phone never sees the previous user's picture. "local" is only a fallback for an
     // unauthenticated session, which the UI never shows.
-    fun localFile(context: Context, userId: String?): File {
-        val safeId = userId?.takeIf { it.isNotBlank() } ?: "local"
-        return File(context.filesDir, "profile_picture_$safeId.jpg")
-    }
+    private fun safeUserId(userId: String?): String =
+        userId?.takeIf { it.isNotBlank() } ?: "local"
+
+    fun localFile(context: Context, userId: String?): File =
+        File(context.filesDir, "profile_picture_${safeUserId(userId)}.jpg")
 
     fun existingLocalFile(context: Context, userId: String?): File? =
         localFile(context, userId).takeIf { it.exists() && it.length() > 0 }
+
+    // Comment: The marker is written before the public upload starts and removed only after the
+    // upload and its local bookkeeping succeed. A process death during the request therefore
+    // leaves a durable signal for the next launch instead of silently losing the update.
+    private fun pendingFile(context: Context, userId: String?): File =
+        File(context.filesDir, "profile_picture_${safeUserId(userId)}$PENDING_SUFFIX")
+
+    fun hasPendingUpload(context: Context, userId: String?): Boolean =
+        pendingFile(context, userId).exists()
+
+    suspend fun markUploadPending(context: Context, userId: String?): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                pendingFile(context, userId).writeText("pending")
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+    suspend fun clearUploadPending(context: Context, userId: String?): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val file = pendingFile(context, userId)
+                !file.exists() || file.delete()
+            } catch (e: Exception) {
+                false
+            }
+        }
 
     fun isOverLimit(file: File): Boolean = file.length() > MAX_BYTES
 
@@ -37,6 +75,14 @@ object ProfilePictureRepository {
             true
         } catch (e: Exception) {
             false
+        }
+    }
+
+    suspend fun readLocal(file: File): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            file.readBytes()
+        } catch (e: Exception) {
+            null
         }
     }
 
