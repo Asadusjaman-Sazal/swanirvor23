@@ -1,6 +1,10 @@
 package com.example.ui.view
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,10 +77,21 @@ fun ProfilePictureSection(
     var isProcessing by remember { mutableStateOf(false) }
 
     // Comment: The system pickers return null when dismissed; null leaves the current picture untouched.
-    val galleryLauncher = rememberLauncherForActivityResult(
+    // Gallery uses the device's gallery/photos picker directly. AndroidX PickVisualMedia falls back
+    // to ACTION_OPEN_DOCUMENT (DocumentsUI / File Manager) on devices without the system photo
+    // picker, which is the behaviour this row must avoid. The photo picker is kept only as a
+    // fallback for a device with no gallery handler at all; Files deliberately uses OpenDocument.
+    val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) cropUri = uri
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { cropUri = it }
+        }
     }
     val filesLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -156,9 +171,23 @@ fun ProfilePictureSection(
                         onDismiss = { showSourceSheet = false },
                         onGallery = {
                             showSourceSheet = false
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
+                            // Comment: ACTION_PICK with the MediaStore image collection opens the
+                            // gallery/photos app rather than the document picker. The read grant
+                            // survives long enough for the crop page to decode the selection.
+                            val intent = Intent(
+                                Intent.ACTION_PICK,
+                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                            ).apply {
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            try {
+                                galleryLauncher.launch(intent)
+                            } catch (e: ActivityNotFoundException) {
+                                // Comment: No gallery app on this device; use the system photo picker.
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
                         },
                         onFiles = {
                             showSourceSheet = false
