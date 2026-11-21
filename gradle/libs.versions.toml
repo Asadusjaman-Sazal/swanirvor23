@@ -40,8 +40,11 @@ firebaseBom = "34.12.0"
 secretsGradlePlugin = "2.0.1"
 securityCrypto = "1.1.0-alpha06"
 workRuntime = "2.10.5"
-credentials = "1.6.0"
-googleId = "1.2.0"
+# Comment: Keep this pair pinned. Credential Manager 1.5.0+ (pulled by googleid 1.2.x) can hang
+# after a Google account is selected, so updates must re-test the native Google sign-in flow
+# (Google issue 525786067).
+credentials = "1.3.0"
+googleId = "1.1.1"
 exifinterface = "1.4.1"
 
 [libraries]

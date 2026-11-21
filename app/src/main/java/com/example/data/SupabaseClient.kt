@@ -154,11 +154,16 @@ object SupabaseClient {
     }
 
     // Comment: Exchange the stored refresh token for a fresh session via POST /auth/v1/token,
-    // saving the new session JSON on success or clearing the session when the refresh is rejected.
+    // saving the new session JSON on success. The session is cleared only when the refresh token is
+    // actually rejected; a transient server/network failure must not sign out a local-first user.
     suspend fun refreshAccessToken(): SupabaseAuthResult = withContext(Dispatchers.IO) {
         val refreshToken = getRefreshToken()
         if (refreshToken.isNullOrBlank()) {
-            return@withContext SupabaseAuthResult(false, "No refresh token available. Please log in again.")
+            return@withContext SupabaseAuthResult(
+                false,
+                "No refresh token available. Please log in again.",
+                refreshRejected = true
+            )
         }
 
         val url = "$SUPABASE_URL/auth/v1/token?grant_type=refresh_token"
@@ -189,8 +194,17 @@ object SupabaseClient {
                     }
                     SupabaseAuthResult(true, "Token refreshed successfully", sessionExists = true)
                 } else {
-                    clearSession()
-                    SupabaseAuthResult(false, "Failed to refresh token. Please log in again.", sessionExists = false)
+                    // Comment: Only 400/401/403 mean the refresh token itself is unusable. A 5xx or
+                    // rate limit is temporary, so keep the local session and let the app try later.
+                    val rejected = response.code == 400 || response.code == 401 || response.code == 403
+                    if (rejected) clearSession()
+                    SupabaseAuthResult(
+                        false,
+                        if (rejected) "Your session has expired. Please sign in again."
+                        else "Could not refresh your session. Please try again.",
+                        sessionExists = !rejected,
+                        refreshRejected = rejected
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -225,7 +239,10 @@ object SupabaseClient {
         val message: String,
         val userEmail: String? = null,
         val sessionExists: Boolean = false,
-        val sessionJson: String? = null
+        val sessionJson: String? = null,
+        // Comment: True only when the refresh token was rejected (or is missing) and the stored
+        // session is no longer usable. Network/server failures leave this false.
+        val refreshRejected: Boolean = false
     )
 
     /**

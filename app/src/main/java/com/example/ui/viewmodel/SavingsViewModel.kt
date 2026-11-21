@@ -37,6 +37,21 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
     private val _currentUserId = MutableStateFlow<Int?>(null)
     val currentUserId: StateFlow<Int?> = _currentUserId.asStateFlow()
 
+    // Comment: Startup auth has three states, not two: a saved session may still be resolving its
+    // local member. Showing AuthScreen during that window made a valid session look like a hang.
+    private val _isRestoringSession = MutableStateFlow(true)
+    val isRestoringSession: StateFlow<Boolean> = _isRestoringSession.asStateFlow()
+
+    // Comment: A session exists but its member profile could not be resolved (usually offline).
+    // Keep the restoring screen with Retry instead of pretending this is a logged-out user.
+    private val _sessionRestoreError = MutableStateFlow<String?>(null)
+    val sessionRestoreError: StateFlow<String?> = _sessionRestoreError.asStateFlow()
+
+    // Comment: One-shot explanation shown above the login form when a saved session is cleared
+    // because its refresh token was rejected or the stored session could not be read.
+    private val _authNotice = MutableStateFlow<String?>(null)
+    val authNotice: StateFlow<String?> = _authNotice.asStateFlow()
+
     // Comment: Store and expose the logged-in user's email dynamically to resolve duplicate account issues
     val currentMemberEmail: StateFlow<String?>
 
@@ -124,35 +139,30 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
 
         // Seed data asynchronously
         viewModelScope.launch {
-            repository.populateInitialDataIfEmpty()
+            // Comment: Startup housekeeping must never strand the auth gate on the restoring screen.
+            // Even if seeding/settings fail, still attempt the saved-session restore below.
+            try {
+                repository.populateInitialDataIfEmpty()
 
-            // Comment: Dynamically update any pre-existing database default savings goal from 5000.0 to 500.0 for a consistent user experience
-            repository.appSettings.firstOrNull()?.let { settings ->
-                if (settings.personalGoal == 5000.0) {
-                    repository.updateSettings(settings.copy(personalGoal = 500.0))
+                // Comment: Dynamically update any pre-existing database default savings goal from 5000.0 to 500.0 for a consistent user experience
+                repository.appSettings.firstOrNull()?.let { settings ->
+                    if (settings.personalGoal == 5000.0) {
+                        repository.updateSettings(settings.copy(personalGoal = 500.0))
+                    }
                 }
-            }
 
-            // Comment: Schedule the weekly reminder once on startup from the persisted settings (single source of truth)
-            repository.getSettingsDirect()?.let { startupSettings ->
-                com.example.ui.notification.NotificationScheduler.scheduleNotification(getApplication(), startupSettings)
-            }
-
-            // Comment: Automatically restore the user's logged-in session on startup if a valid Supabase session is persisted
-            val savedEmail = com.example.data.SupabaseClient.getSessionEmail()
-            if (!savedEmail.isNullOrBlank()) {
-                // Comment: Force bidirectional data sync with Supabase tables on startup
-                repository.syncWithSupabase()
-
-                val membersList = repository.getAllMembersDirect()
-                val matchedMember = membersList.find { it.email.trim().equals(savedEmail.trim(), ignoreCase = true) }
-                if (matchedMember != null) {
-                    _currentUserId.value = matchedMember.id
-                    // Also update settings profile name, membershipNo, and mobileNo for UI matching
-                    val settings = repository.getSettingsDirect() ?: AppSettings()
-                    repository.updateSettings(settings.copy(profileName = matchedMember.name, membershipNo = matchedMember.membershipNo, mobileNo = matchedMember.mobileNo))
+                // Comment: Schedule the weekly reminder once on startup from the persisted settings (single source of truth)
+                repository.getSettingsDirect()?.let { startupSettings ->
+                    com.example.ui.notification.NotificationScheduler.scheduleNotification(getApplication(), startupSettings)
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("SavingsViewModel", "Startup preparation failed", e)
             }
+
+            // Comment: Restore from the local member before any network work. The previous code
+            // awaited a full sync first, which left the login screen visible while a valid session
+            // was still being checked. The full sync now starts after the app is usable.
+            restoreSavedSession()
 
             // Comment: A failed or interrupted avatar upload leaves a pending marker; retry it on
             // this launch without making the already-cached local preview wait for the network.
@@ -1397,10 +1407,173 @@ class SavingsViewModel(application: Application) : AndroidViewModel(application)
         onResult(true, "Welcome back, ${foundMember.name}!")
     }
 
+    // Comment: Restore a saved session from the local Room member first. AuthScreen must only be
+    // shown when there is definitely no session or the refresh token has been rejected.
+    private suspend fun restoreSavedSession() {
+        try {
+            if (com.example.data.SupabaseClient.getSession() == null) {
+                _isRestoringSession.value = false
+                return
+            }
+
+            val savedEmail = com.example.data.SupabaseClient.getSessionEmail()
+            if (savedEmail.isNullOrBlank()) {
+                endSessionRestoreWithLogin("Your saved session could not be restored. Please sign in again.")
+                return
+            }
+
+            val localMember = findLocalMemberByEmail(savedEmail)
+            if (localMember != null) {
+                adoptRestoredMember(localMember)
+                _sessionRestoreError.value = null
+                _isRestoringSession.value = false
+                startBackgroundSessionSync(savedEmail)
+                return
+            }
+
+            // Comment: The local row can be missing after a database reset. Give the full sync one
+            // chance to pull this member by email; keep the restoring screen (not login) meanwhile.
+            if (!refreshExpiringSessionForRestore()) return
+            repository.syncWithSupabase()
+            if (com.example.data.SupabaseClient.getSession() == null) {
+                endSessionRestoreWithLogin("Your session has expired. Please sign in again.")
+                return
+            }
+
+            val syncedMember = findLocalMemberByEmail(savedEmail)
+            if (syncedMember != null) {
+                adoptRestoredMember(syncedMember)
+                _sessionRestoreError.value = null
+                _isRestoringSession.value = false
+                return
+            }
+
+            _sessionRestoreError.value = "We couldn't restore your member profile. Check your connection and try again."
+        } catch (e: Exception) {
+            android.util.Log.e("SavingsViewModel", "Failed to restore the saved session", e)
+            _sessionRestoreError.value = "We couldn't restore your session. Check your connection and try again."
+        }
+    }
+
+    // Comment: Refresh an expiring access token before the one-shot missing-member sync. A real
+    // rejection clears the session and shows login with an explanation; a network failure keeps
+    // the restoring screen retryable instead of signing the user out.
+    private suspend fun refreshExpiringSessionForRestore(): Boolean {
+        if (!com.example.data.SupabaseClient.isSessionExpiringSoon()) return true
+        val refreshResult = com.example.data.SupabaseClient.refreshAccessToken()
+        if (refreshResult.refreshRejected) {
+            endSessionRestoreWithLogin("Your session has expired. Please sign in again.")
+            return false
+        }
+        if (!refreshResult.success) {
+            _sessionRestoreError.value = "We couldn't refresh your session. Check your connection and try again."
+            return false
+        }
+        return true
+    }
+
+    // Comment: The local member is enough to render the app; the network sync runs after this.
+    private suspend fun adoptRestoredMember(member: Member) {
+        _currentUserId.value = member.id
+        val settings = repository.getSettingsDirect() ?: AppSettings()
+        repository.updateSettings(
+            settings.copy(
+                profileName = member.name,
+                membershipNo = member.membershipNo,
+                mobileNo = member.mobileNo
+            )
+        )
+    }
+
+    private suspend fun findLocalMemberByEmail(email: String): Member? =
+        repository.getAllMembersDirect().find {
+            it.email.trim().equals(email.trim(), ignoreCase = true)
+        }
+
+    // Comment: Run the full sync only after the local member has opened the app. A rejected
+    // refresh token is the one case that must move the user back to login; network failures leave
+    // the local-first app usable.
+    private fun startBackgroundSessionSync(restoredEmail: String) {
+        viewModelScope.launch {
+            try {
+                // Comment: The user may have logged out or changed accounts before this job starts.
+                if (!isRestoredSessionStillActive(restoredEmail)) return@launch
+
+                if (com.example.data.SupabaseClient.isSessionExpiringSoon()) {
+                    val refreshResult = com.example.data.SupabaseClient.refreshAccessToken()
+                    if (refreshResult.refreshRejected) {
+                        if (_currentUserId.value != null) {
+                            endSessionRestoreWithLogin("Your session has expired. Please sign in again.")
+                        }
+                        return@launch
+                    }
+                    if (!refreshResult.success) return@launch
+                }
+
+                if (!isRestoredSessionStillActive(restoredEmail)) return@launch
+                repository.syncWithSupabase()
+
+                // Comment: Do not let an old background sync sign out a user who has already
+                // logged out or signed in with a different account while it was running.
+                if (com.example.data.SupabaseClient.getSession() == null) {
+                    if (_currentUserId.value != null) {
+                        endSessionRestoreWithLogin("Your session has expired. Please sign in again.")
+                    }
+                    return@launch
+                }
+                if (!isRestoredSessionStillActive(restoredEmail)) return@launch
+
+                // Comment: Sync can reconcile local IDs to remote IDs; re-resolve by email so the
+                // authenticated UI does not keep pointing at a deleted local row.
+                findLocalMemberByEmail(restoredEmail)?.let { member ->
+                    if (member.id != _currentUserId.value) _currentUserId.value = member.id
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("SavingsViewModel", "Background session sync failed: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    private fun isRestoredSessionStillActive(restoredEmail: String): Boolean {
+        val currentEmail = com.example.data.SupabaseClient.getSessionEmail()
+        return !currentEmail.isNullOrBlank() &&
+            currentEmail.trim().equals(restoredEmail.trim(), ignoreCase = true)
+    }
+
+    // Comment: Clear the unusable session and put the explanation above the login form.
+    private fun endSessionRestoreWithLogin(message: String) {
+        logout()
+        _authNotice.value = message
+    }
+
+    // Comment: Retry only exists after restore has stopped with an error, so this cannot start a
+    // second concurrent restore from repeated taps.
+    fun retrySessionRestore() {
+        if (_sessionRestoreError.value == null) return
+        _sessionRestoreError.value = null
+        _isRestoringSession.value = true
+        viewModelScope.launch { restoreSavedSession() }
+    }
+
+    // Comment: Explicit user escape from a restore that cannot complete (for example, offline with
+    // no local member). Clearing the session makes the login screen the correct destination.
+    fun abandonSessionRestore() {
+        logout()
+        _sessionRestoreError.value = null
+        _authNotice.value = "Your saved session was cleared. Please sign in again."
+    }
+
+    fun clearAuthNotice() {
+        _authNotice.value = null
+    }
+
     // Comment: Log out the current user and clear the active session
     fun logout() {
         com.example.data.SupabaseClient.clearSession()
         _currentUserId.value = null
+        _isRestoringSession.value = false
+        _sessionRestoreError.value = null
+        _authNotice.value = null
         // Comment: Reset auth-related UI state so a logged-out user cannot see stale login dialogs or errors
         _googleLoginLoading.value = false
         _googleLoginError.value = null

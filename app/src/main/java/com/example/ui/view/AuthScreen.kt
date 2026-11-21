@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -77,6 +79,9 @@ fun AuthScreen(viewModel: SavingsViewModel) {
     // Comment: Observe Google login states from ViewModel
     val googleLoginLoading by viewModel.googleLoginLoading.collectAsStateWithLifecycle()
     val googleLoginError by viewModel.googleLoginError.collectAsStateWithLifecycle()
+
+    // Comment: A rejected saved session lands on this screen with an explanation shown above the form.
+    val authNotice by viewModel.authNotice.collectAsStateWithLifecycle()
 
     // Comment: Automatically sync the Google Login error into our UI display state
     LaunchedEffect(googleLoginError) {
@@ -176,6 +181,36 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Comment: Explain why the saved session returned the user to login. The banner is
+                    // cleared when they start another sign-in attempt.
+                    AnimatedVisibility(visible = !authNotice.isNullOrBlank()) {
+                        authNotice?.let { notice ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp)
+                                    .background(
+                                        Color(0xFFF07171).copy(alpha = 0.12f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        Color(0xFFF07171).copy(alpha = 0.5f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(16.dp)
+                                    .testTag("auth_notice_banner")
+                            ) {
+                                Text(
+                                    text = notice,
+                                    color = Color(0xFFF07171),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
                     // Switch Selector (Tab style)
                     Row(
                         modifier = Modifier
@@ -195,6 +230,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                                     isSignInMode = true
                                     authErrorMessage = null
                                     signUpSuccessMessage = null
+                                    viewModel.clearAuthNotice()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -216,6 +252,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                                     isSignInMode = false
                                     authErrorMessage = null
                                     signUpSuccessMessage = null
+                                    viewModel.clearAuthNotice()
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -488,6 +525,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                     Button(
                         onClick = {
                             focusManager.clearFocus()
+                            viewModel.clearAuthNotice()
                             isLoading = true
                             authErrorMessage = null
                             if (isSignInMode) {
@@ -591,6 +629,7 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                     OutlinedButton(
                         onClick = {
                             if (!googleLoginLoading && !isLoading && !isGoogleSheetBusy) {
+                                viewModel.clearAuthNotice()
                                 authErrorMessage = null
                                 signUpSuccessMessage = null
                                 val webClientId = com.example.BuildConfig.GOOGLE_WEB_CLIENT_ID
@@ -656,17 +695,20 @@ fun AuthScreen(viewModel: SavingsViewModel) {
                             horizontalArrangement = Arrangement.Center
                         ) {
                             if (googleLoginLoading || isGoogleSheetBusy) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = goldAccent,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Signing in...",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
+                                // Comment: Keep the progress indicator in the horizontal middle of the
+                                // full-width button instead of beside a label (which pushed it left).
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .semantics { contentDescription = "Signing in" },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = goldAccent,
+                                        strokeWidth = 2.dp
+                                    )
+                                }
                             } else {
                                 // Comment: Decorative icon representation for the Google authentication entry point
                                 Icon(

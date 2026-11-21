@@ -70,6 +70,8 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 @Composable
 fun MainScreen(viewModel: SavingsViewModel) {
     val currentUserId by viewModel.currentUserId.collectAsStateWithLifecycle()
+    val isRestoringSession by viewModel.isRestoringSession.collectAsStateWithLifecycle()
+    val sessionRestoreError by viewModel.sessionRestoreError.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showExitDialog by remember { mutableStateOf(false) }
 
@@ -122,12 +124,24 @@ fun MainScreen(viewModel: SavingsViewModel) {
         }
     }
 
-    if (currentUserId == null) {
-        // Enforce user sign-in/sign-up
-        AuthScreen(viewModel = viewModel)
-    } else {
-        // Display the fully featured app content
-        MainAppContent(viewModel = viewModel)
+    when {
+        isRestoringSession -> {
+            // Comment: A saved session is still being resolved. Do not show the login form until
+            // the local member check (and, if needed, one remote retry) has definitely finished.
+            SessionRestoringScreen(
+                errorMessage = sessionRestoreError,
+                onRetry = viewModel::retrySessionRestore,
+                onSignInAgain = viewModel::abandonSessionRestore
+            )
+        }
+        currentUserId == null -> {
+            // Enforce user sign-in/sign-up only when there is no saved session left to restore.
+            AuthScreen(viewModel = viewModel)
+        }
+        else -> {
+            // Display the fully featured app content
+            MainAppContent(viewModel = viewModel)
+        }
     }
 
     // Comment: Render the Reset Password Dialog when the user logs in via a secure password reset link
