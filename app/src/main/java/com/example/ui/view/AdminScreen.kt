@@ -60,6 +60,7 @@ import com.example.util.formatToDdMmYyyy
 import com.example.util.getCurrentCycleRange
 import com.example.util.getPreviousCycleRange
 import com.example.util.parseDateTextToMillis
+import com.example.util.WeeklyReportData
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -77,6 +78,9 @@ fun AdminScreen(viewModel: SavingsViewModel) {
     val isDarkMode = appSettings.isDarkMode
     // Retrieve all savings from the ViewModel to render full savings histories
     val allSavings by viewModel.allSavings.collectAsStateWithLifecycle()
+    // Comment: Weekly Report bank figures come from the same derived totals shown on the Bank Deposits screen.
+    val totalBankDeposited by viewModel.totalBankDeposited.collectAsStateWithLifecycle()
+    val cashInHand by viewModel.cashInHand.collectAsStateWithLifecycle()
 
     // Flag to toggle showing the list of individual member names
     var isIndividualStatementsOpen by remember { mutableStateOf(false) }
@@ -212,6 +216,8 @@ fun AdminScreen(viewModel: SavingsViewModel) {
     // Temporary variables to support exporting CSV data to internal storage or share sheet
     var pendingCsvContent by remember { mutableStateOf("") }
     var showExportOptionDialog by remember { mutableStateOf(false) }
+    // Comment: Snapshot captured when Weekly Report is tapped, then shown in the PDF/Text pop-over.
+    var weeklyReportData by remember { mutableStateOf<WeeklyReportData?>(null) }
 
     // Activity launcher for creating and saving the CSV document natively using SAF (Storage Access Framework)
     val createCsvLauncher = rememberLauncherForActivityResult(
@@ -1959,6 +1965,38 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                     style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                 )
 
+                // Comment: Weekly Report is independent of the duration selector below; it always covers
+                // the current Friday -> Thursday cycle and is shared as a PDF or as copied text.
+                OutlinedButton(
+                    onClick = {
+                        val (weekStart, weekEnd) = getCurrentCycleRange()
+                        weeklyReportData = WeeklyReportData(
+                            generatedAt = Date(),
+                            weekStartMillis = weekStart,
+                            weekEndMillis = weekEnd,
+                            savings = allSavings,
+                            members = members,
+                            totalDeposited = totalBankDeposited,
+                            cashInHand = cashInHand
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("weekly_report_button"),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Assessment, contentDescription = "Weekly Report")
+                            Text("Weekly Report", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        Icon(Icons.Default.Share, contentDescription = "Share")
+                    }
+                }
+
                 // --- Duration Header and Selector ---
                 Text(
                     text = "Duration",
@@ -2417,6 +2455,14 @@ fun AdminScreen(viewModel: SavingsViewModel) {
                     )
                 }
             }
+        }
+
+        // Comment: PDF/Text choice for the snapshot captured by the Weekly Report button above.
+        weeklyReportData?.let { report ->
+            WeeklyReportOptionsDialog(
+                report = report,
+                onDismiss = { weeklyReportData = null }
+            )
         }
     }
 }
