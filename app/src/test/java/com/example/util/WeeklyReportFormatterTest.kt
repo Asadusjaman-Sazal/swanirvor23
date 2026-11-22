@@ -61,7 +61,7 @@ class WeeklyReportFormatterTest {
 
             22/11/2026
             Asadusjaman - 200৳
-            -------------------------------------------------
+            --------------------------------------------
             Total savings this week = 1,700৳
 
             Total Saving made by the members:

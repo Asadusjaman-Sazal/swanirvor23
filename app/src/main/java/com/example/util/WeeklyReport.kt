@@ -75,7 +75,7 @@ object WeeklyReportFormatter {
                 }
             }
 
-            appendLine("-------------------------------------------------")
+            appendLine("--------------------------------------------")
             appendLine("Total savings this week = ${formatAmount(totalThisWeek)}")
             appendLine()
             appendLine("Total Saving made by the members:")

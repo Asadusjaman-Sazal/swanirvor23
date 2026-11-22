@@ -1,4 +1,4 @@
-Current Version: 1.0.63
+Current Version: 1.0.64
 -----------------------
 
 Version History:
@@ -133,3 +133,4 @@ Version: 1.0.60 - Personal Dashboard: the ALERT! card now mirrors Admin Panel > 
 Version: 1.0.61 - Added the automatic post-edit commit workflow to AGENTS.md: every successful build is committed with a one-line summary that starts with the app version and the matching versionHistory log as the commit description.
 Version: 1.0.62 - Added a Weekly Report action to Admin Panel > Reports & Export: it snapshots the current Friday→Thursday cycle and lists that week's savings by date and member, alphabetized all-time member totals, total savings, Total Deposited, and Cash in Hand. A pop-over offers PDF (generated in cache and shared as an attachment through the system share sheet) or Text (copied to the clipboard and shared through WhatsApp or any other app), following the requested report layout.
 Version: 1.0.63 - Moved the Admin Panel > Reports & Export Weekly Report button so it appears immediately after Individual Statements instead of before the Duration selector, keeping its PDF and Text sharing unchanged.
+Version: 1.0.64 - Shortened the dashed separator above "Total savings this week" in the Weekly Report by 5 dashes, so it now reads 44 instead of 49.
